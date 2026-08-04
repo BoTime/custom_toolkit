@@ -16,13 +16,21 @@ import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
 
-/** The `### \`sdd\`` section: from its heading to the next `###` heading. */
+/**
+ * The `### \`sdd\`` section: from its heading line to the next line that
+ * starts a heading at exactly `### ` depth. Both boundaries are anchored to
+ * the start of a line, so a deeper heading (e.g. `#### \`sdd\``) can't be
+ * mistaken for the start, and only a line that is genuinely a `### ` heading
+ * can end the section.
+ */
 function sddSection(markdown) {
-  const start = markdown.indexOf("### `sdd`");
-  if (start === -1) throw new Error("SKILL.md has no `### \\`sdd\\`` section");
-  const rest = markdown.slice(start + 1);
-  const end = rest.indexOf("\n### ");
-  return end === -1 ? rest : rest.slice(0, end);
+  const startMatch = /^### `sdd`.*$/m.exec(markdown);
+  if (!startMatch) throw new Error("SKILL.md has no `### \\`sdd\\`` section");
+  const rest = markdown.slice(startMatch.index);
+  const endMatch = /\n### .*$/m.exec(rest.slice(startMatch[0].length));
+  return endMatch
+    ? rest.slice(0, startMatch[0].length + endMatch.index)
+    : rest;
 }
 
 describe("sdd dispatch verification contract", () => {
