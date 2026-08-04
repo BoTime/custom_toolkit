@@ -6,7 +6,7 @@ both the marketplace and the home of the plugins it lists.
 ## Install
 
 ```bash
-/plugin marketplace add bo/custom_toolkit
+/plugin marketplace add BoTime/custom_toolkit
 /plugin install autopilot@custom-toolkit
 ```
 
