@@ -6,6 +6,7 @@ import {
   durations,
   totalDuration,
   formatDuration,
+  formatTimingSection,
 } from "./autopilot-ledger.mjs";
 
 const LEDGER = `# autopilot run — task: add a CSV export button
@@ -177,5 +178,46 @@ describe("formatDuration", () => {
 
   it("returns null for a null span", () => {
     expect(formatDuration(null)).toBe(null);
+  });
+});
+
+describe("formatTimingSection", () => {
+  it("renders the total and a per-stage breakdown", () => {
+    const section = formatTimingSection(parseLedger(LEDGER));
+    expect(section).toBe(`## Autopilot timing
+
+Total run duration: **2h 17m** (excludes preflight — the ledger starts at \`started (phase 1)\`).
+
+| Stage | Duration |
+| --- | --- |
+| design approved | 29m |
+| worktree: .claude/worktrees/csv-export (branch csv-export) | 15s |
+| spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md | 1m |
+| plan complete → docs/superpowers/plans/2026-07-29-csv-export.md | 6m |
+| sdd complete (6 tasks, 0 parked) | 1h 35m |
+| rebase clean, tests green (42 passed) | 3m |
+| pr: https://example.com/pull/23 | 1m |`);
+  });
+
+  it("renders the total without a table for a single-entry ledger", () => {
+    const section = formatTimingSection(
+      parseLedger("# autopilot run — task: x\n2026-07-29T14:02:11Z  started (phase 1)"),
+    );
+    expect(section).toBe(`## Autopilot timing
+
+Total run duration: **0s** (excludes preflight — the ledger starts at \`started (phase 1)\`).`);
+  });
+
+  it("returns null for a ledger with no entries", () => {
+    expect(formatTimingSection(parseLedger("# autopilot run — task: x"))).toBe(null);
+  });
+
+  it("escapes pipes in stage text so the table does not break", () => {
+    const ledger = `# autopilot run — task: x
+2026-07-29T14:00:00Z  started (phase 1)
+2026-07-29T14:30:00Z  PARKED — tests red | 3 failures`;
+    expect(formatTimingSection(parseLedger(ledger))).toContain(
+      "| PARKED — tests red \\| 3 failures | 30m |",
+    );
   });
 });

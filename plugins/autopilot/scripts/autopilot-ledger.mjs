@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const HEADER = /^#\s*autopilot run\s*—\s*task:\s*(.+)$/;
 
@@ -80,6 +81,34 @@ export function formatDuration(seconds) {
   return `${total}s`;
 }
 
+/** Render the run's timing as a markdown block for a PR description.
+ *
+ * The total is the headline; the table attributes it to stages, each row
+ * naming the entry the stage *ended* with. Returns null for a ledger with no
+ * entries — there is nothing to report and nothing should be appended.
+ */
+export function formatTimingSection(ledger) {
+  const total = totalDuration(ledger);
+  if (total === null) return null;
+
+  const lines = [
+    "## Autopilot timing",
+    "",
+    `Total run duration: **${formatDuration(total)}** (excludes preflight — the ledger starts at \`started (phase 1)\`).`,
+  ];
+
+  const stages = durations(ledger);
+  if (stages.length > 0) {
+    lines.push("", "| Stage | Duration |", "| --- | --- |");
+    for (const stage of stages) {
+      // A literal pipe in stage text would end the cell early.
+      const label = stage.to.replaceAll("|", "\\|");
+      lines.push(`| ${label} | ${formatDuration(stage.seconds)} |`);
+    }
+  }
+  return lines.join("\n");
+}
+
 export function append(path, text, now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z")) {
   appendFileSync(path, `${formatLine(now(), text)}\n`, "utf8");
 }
@@ -87,3 +116,28 @@ export function append(path, text, now = () => new Date().toISOString().replace(
 export function read(path) {
   return parseLedger(readFileSync(path, "utf8"));
 }
+
+/** `timing <ledger-path>` prints the PR timing section; `duration` the total. */
+export function main(argv = process.argv.slice(2)) {
+  const [command, path] = argv;
+  if (!path) {
+    console.error("usage: autopilot-ledger.mjs <timing|duration> <ledger-path>");
+    process.exitCode = 1;
+    return;
+  }
+  const ledger = read(path);
+  const out =
+    command === "duration"
+      ? formatDuration(totalDuration(ledger))
+      : formatTimingSection(ledger);
+  if (out === null) {
+    console.error("ledger has no entries");
+    process.exitCode = 1;
+    return;
+  }
+  console.log(out);
+}
+
+// pathToFileURL rather than a `file://` template: the plugin's install path is
+// user-controlled and a space in it would silently skip main().
+if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
