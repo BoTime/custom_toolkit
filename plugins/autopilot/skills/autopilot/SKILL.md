@@ -287,13 +287,37 @@ Dispatch the `implement` role to run
 `superpowers:finishing-a-development-branch`, answering its menu with option 2
 (push and create a PR). It handles the push and `gh pr create` itself.
 
-Append `pr: <url>` **first**, then read the total duration back out of the
-ledger — appending first is what makes the PR entry the last timestamp, so
-the span covers the whole run:
+Append `pr: <url>` **first**, then read the timing back out of the ledger —
+appending first is what makes the PR entry the last timestamp, so the span
+covers the whole run:
 
 ```bash
-node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>{const l=m.read('.superpowers/autopilot/<branch>/run.md');console.log(m.formatDuration(m.totalDuration(l)))})" "$AP"
+node "$AP/scripts/autopilot-ledger.mjs" timing .superpowers/autopilot/<branch>/run.md
+node "$AP/scripts/autopilot-ledger.mjs" duration .superpowers/autopilot/<branch>/run.md
 ```
+
+`timing` prints a markdown section — the total plus a per-stage table.
+`duration` prints just the total, for reporting to your human partner.
+
+Record the timing in the PR description. Read the body the PR was created
+with, append the timing section to it, and edit the PR — never replace the
+body, the description written by `finishing-a-development-branch` is the part
+a reviewer reads:
+
+```bash
+RUN=.superpowers/autopilot/<branch>
+gh pr view <url> --json body --jq .body > "$RUN/pr-body.md"
+printf '\n\n' >> "$RUN/pr-body.md"
+node "$AP/scripts/autopilot-ledger.mjs" timing "$RUN/run.md" >> "$RUN/pr-body.md"
+gh pr edit <url> --body-file "$RUN/pr-body.md"
+```
+
+The body file goes in the run directory, not `/tmp` — it is scoped to this
+branch, so two runs finishing at once cannot overwrite each other's PR body.
+
+If the `gh pr edit` fails, do not park — the PR exists and the branch is
+green. Report the timing in your summary instead and say the description
+could not be updated.
 
 Report the URL and the duration together:
 
@@ -331,10 +355,11 @@ followed by an em-dash. `nextStage` detects a parked run by matching
 breaks resume detection, and a later `/autopilot resume` will drive the run
 straight past the park.
 
-Report elapsed time alongside the park reason, read the same way as at the
-`pr` stage — append the `PARKED` entry first, then compute. A parked run is
-exactly when your human partner wants to know how much time went in before it
-stopped.
+Report elapsed time alongside the park reason — append the `PARKED` entry
+first, then run the `duration` command from the `pr` stage against the same
+ledger. A parked run is exactly when your human partner wants to know how much
+time went in before it stopped. There is no PR to record it in, so the ledger
+and your summary are the only places it lands.
 
 Parking behaves the same whether or not Remote Control is connected. If it is,
 your human partner gets a push notification; if not, they read the ledger.
