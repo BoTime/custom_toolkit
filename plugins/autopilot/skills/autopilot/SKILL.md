@@ -1,0 +1,358 @@
+---
+name: autopilot
+description: Use when the developer runs /autopilot with a task description, or /autopilot resume with a branch name - brainstorms interactively, then drives plan, implementation, landing, and PR automatically
+---
+
+# Autopilot
+
+Take a task from idea to pull request. Phase 1 is a conversation with your
+human partner. Phase 2 runs without them.
+
+**Announce at start:** "I'm using the autopilot skill to take this from
+brainstorm to PR."
+
+## Resume
+
+If invoked as `/autopilot resume <branch>`, read
+`.superpowers/autopilot/<branch>/run.md`, call `nextStage` on it, and jump to
+that stage. Do not redo completed stages. Then follow the pipeline from there.
+
+`nextStage` returns one of nine values: the seven stages — `phase1`, `setup`,
+`spec`, `plan`, `sdd`, `land`, `pr` — plus `done` and `parked`.
+
+- A stage name — jump to that stage and follow the pipeline from there.
+- `done` — the run reached its PR. Report the URL from the ledger and stop.
+- `parked` — **do not continue.** The run stopped deliberately and needs a
+  decision from your human partner. Read the park reason from the ledger's
+  last entry, report it plainly, and stop. Resuming past a park defeats its
+  purpose: a run parked on red tests would otherwise retry landing and open a
+  pull request on a failing branch.
+
+## Locating the plugin's scripts
+
+This skill ships four Node helpers in the plugin's `scripts/` directory. They
+do **not** live in your human partner's project, so every command below needs
+the plugin's absolute path.
+
+**`$CLAUDE_PLUGIN_ROOT` is not set in Bash tool calls** — it is populated only
+for processes the plugin system launches, such as hooks. Using it here yields
+an empty string and `ERR_MODULE_NOT_FOUND`. Derive the path instead:
+
+When this skill loaded, the harness prefixed it with a line reading
+`Base directory for this skill: <abs path>`, pointing at
+`<plugin root>/skills/autopilot`. The plugin root is that path with
+`/skills/autopilot` removed.
+
+Resolve it once at preflight and reuse it for the rest of the run:
+
+```bash
+AP="<the base directory, minus /skills/autopilot>"
+ls "$AP/scripts/autopilot-config.mjs"   # must exist; if not, stop
+```
+
+Substitute that literal path into every `"$AP/..."` below — you are writing
+each command fresh, and shell variables do not persist between Bash calls.
+
+If the base-directory line is somehow absent, fall back to locating the
+scripts and stop if the search comes up empty:
+
+```bash
+ls ~/.claude/plugins/cache/*/autopilot/*/scripts/autopilot-config.mjs 2>/dev/null
+```
+
+## Preflight
+
+Run before asking your human partner anything. On any failure, report what is
+missing and stop — do not start the brainstorm.
+
+1. **Skills resolve.** Confirm each of these is available:
+   `autopilot:autopilot-brainstorm`, `superpowers:writing-plans`,
+   `superpowers:subagent-driven-development`,
+   `superpowers:requesting-code-review`,
+   `superpowers:finishing-a-development-branch`,
+   `superpowers:using-git-worktrees`.
+   A missing skill is the most dangerous failure here: an agent told to follow
+   an absent skill improvises the stage and returns plausible output that
+   skipped the process entirely.
+2. **SDD scripts are executable.** Check `sdd-workspace`, `task-brief`, and
+   `review-package` in the subagent-driven-development skill's `scripts/`.
+3. **Config is valid.** Run from the repository root:
+
+   ```bash
+   AP="<plugin root>" && node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-config.mjs').href).then(m=>{const r=m.loadConfig('.claude/autopilot.json');r.warnings.forEach(w=>console.log('warning:',w));console.log(r.usedProjectConfig?'ok (project config)':'ok (plugin defaults)')})" "$AP"
+   ```
+
+   Report any warning. Two matter especially:
+
+   - **`test_command` not set** — the project supplied no test command, so
+     `land` will park instead of reporting tests green. Say so plainly before
+     starting the brainstorm; the fix is one key in the project's
+     `.claude/autopilot.json`.
+   - `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
+     effort level.
+
+   Config comes from two layers: the plugin's `autopilot.default.json`, and
+   the project's optional `.claude/autopilot.json` layered over it, merged per
+   key (and per role within `roles`). A project with no config file is normal —
+   it runs on defaults.
+4. **Repository preconditions.** A git repo with an `origin` remote, and
+   `gh auth status` succeeding.
+
+## Phase 1 — brainstorm
+
+Create the ledger at `.superpowers/autopilot/<branch>/run.md` once the branch
+name is known; until then, hold the start timestamp. Its header names the
+task, not the spec, because the ledger exists before the spec file does:
+
+```
+# autopilot run — task: <description>
+```
+
+Invoke `autopilot:autopilot-brainstorm` with the task description. It is a fork of
+`superpowers:brainstorming` that stops short of writing a spec file: it
+explores, asks questions, proposes approaches, and presents the design
+section by section, then hands the approved design back to you in
+conversation once your human partner approves it. Nothing is written to disk
+or committed during this phase.
+
+Append to the ledger: `started (phase 1)` at invocation, `design approved`
+when they approve. The spec file itself is written and committed at the
+`spec` stage, inside the worktree — nothing is written to the developer's
+checkout.
+
+**The last section's approval ends Phase 1.** When the brainstorm hands the
+design back, append `design approved` and go straight into `setup` in the
+same turn. Do not re-present the design, do not summarize it back for
+confirmation, and do not ask whether to proceed — every section was approved
+as it was presented, and the design was approved once already. The only thing
+a proceed-check adds is a second approval of the same decisions, which is
+exactly the handoff friction Phase 2 exists to remove. Announce the
+transition in one line ("Design approved — starting Phase 2") and dispatch.
+
+## Phase 2 — automated
+
+Do not ask your human partner anything in Phase 2 unless a stage parks.
+
+**Every dispatch:** generate a subagent definition carrying the role's model
+and effort from `.claude/autopilot.json`, write it to
+`.superpowers/autopilot/<branch>/agents/<role>.md`, and dispatch by that
+definition. The Agent tool has no `effort` parameter; frontmatter is the only
+way to set it.
+
+```
+---
+name: autopilot-<role>
+description: <role> stage of an autopilot run
+model: <config.roles.<role>.model>
+effort: <config.roles.<role>.effort>
+---
+
+<the dispatch prompt>
+```
+
+**Every stage:** re-read the ledger before dispatching, append after. Stage
+outputs go to files; a stage returns a status line and a path, never content.
+This is what keeps your context small enough to avoid compaction.
+
+**Always append via the plugin's `autopilot-ledger.mjs`, never by hand.**
+Every entry must carry an ISO timestamp, and `append()` is what stamps it:
+
+```bash
+node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/<branch>/run.md','<entry text>'))" "$AP"
+```
+
+Writing entries with `cat`/heredoc or the Write tool produces untimestamped
+lines. `parseLedger` skips them, so they are invisible to `nextStage` — a
+resumed run redoes completed stages — and the run's duration cannot be
+recovered afterward. Run the command from the repository root so the relative
+paths resolve.
+
+**Every stage is idempotent:** check whether its output already exists and
+skip if so.
+
+### `setup`
+
+Unless `reaper` is `false` in config, run from the repository root:
+
+```bash
+node "$AP/scripts/autopilot-reaper.mjs" --apply \
+  --dir=<config.worktree_dir> --base=<config.base_ref>
+```
+
+Pass both flags explicitly from config. Their defaults (`.claude/worktrees`,
+`origin/main`) match the plugin defaults, but a project that overrides either
+would otherwise have the reaper scanning the wrong directory — where it finds
+no worktrees and silently reaps nothing.
+
+Report what it kept and why.
+
+Create the worktree from `base_ref` using `superpowers:using-git-worktrees`.
+Phase 2 is unattended, so its consent question must already be answered when
+you invoke it: declare the worktree preference up front in the same
+instruction rather than letting it ask. State explicitly that a worktree is
+wanted, and pass `worktree_dir` from `.claude/autopilot.json` as the declared
+directory — this repository uses `.claude/worktrees/` (also what
+`scripts/autopilot-reaper.mjs` scans), not that skill's own `.worktrees/`
+default. With both declared, its consent branch is already satisfied and it
+proceeds without asking.
+Append: `worktree: <path> (branch <name>)`.
+
+### `spec`
+
+Dispatch the `spec` role to write the approved design into
+`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` **inside the worktree**
+and commit it. This is the run's first commit. Nothing was written to the
+developer's checkout during Phase 1, and nothing is written there now.
+
+Append: `spec committed → <path>`.
+
+### `plan`
+
+Dispatch the `plan` role. It invokes `superpowers:writing-plans` against the
+approved spec and returns the plan path.
+
+Append: `plan complete → <path>`.
+
+### `sdd`
+
+Dispatch the `implement` role to run `superpowers:subagent-driven-development`
+against the plan. `subagent-driven-development` has no mechanism for accepting
+an externally supplied model map — it has its own Model Selection section
+telling its controller to choose models by its own judgment. Naming "the
+roles block" to it is not an instruction it can act on. Instead, the dispatch
+prompt must contain the actual role-to-model-and-effort mapping as literal
+text, read from `.claude/autopilot.json` at dispatch time, framed as an
+override of SDD's own Model Selection heuristics. Include text equivalent to:
+
+> Do not use your own Model Selection judgment to pick models or effort
+> levels. Use this mapping for every internal dispatch instead, reading the
+> values from `.claude/autopilot.json`'s `roles` block:
+>
+> - Implementer, mechanical task → the `implement` role's model and effort
+> - Implementer, multi-file or judgment task → the `implement_complex` role's
+>   model and effort
+> - Task reviewer → the `task_review` role's model and effort
+> - Scoped re-review → the `re_review` role's model and effort
+> - Fix rounds 4–5 → the `fix_escalation` role's model and effort
+> - Final whole-branch review → the `final_review` role's model and effort
+>
+> Substitute each role's actual `model` and `effort` values from the config
+> file into the subagent definition you generate for that dispatch, the same
+> way autopilot generates one per dispatch for its own stages.
+
+Write the literal `model`/`effort` values for all six roles into the dispatch
+prompt so the dispatched agent knows exactly what to use for each of SDD's six
+internal dispatch roles without needing to consult autopilot's config itself.
+
+Answer these gates from config rather than asking:
+
+| Gate | Answer |
+|---|---|
+| `writing-plans` execution choice | `subagent-driven` |
+| SDD pre-flight plan-conflict scan | Resolve; log each resolution to the ledger |
+| SDD plan-vs-review contradiction | Plan governs; log to the ledger |
+
+SDD reporting BLOCKED is not answered from config. It parks.
+
+Append: `sdd complete (<n> tasks, <k> parked)`.
+
+### `land`
+
+Run `node "$AP/scripts/autopilot-land.mjs" <base_ref>` from the
+repository root.
+
+**If `test_command` is not set, park immediately** — before rebasing. Without
+it there is no way to tell a landed branch from a broken one, and the whole
+point of this stage is that check. Append
+`PARKED — test_command not set in .claude/autopilot.json`. Never treat an
+absent test command as a pass.
+
+- `clean` — run `test_command`. Green, append
+  `rebase clean, tests green (<n> passed)` and continue. Red, park.
+- `conflict` — dispatch the `implement` role to resolve. It resolves only what
+  it can reason about confidently: both sides independent, one side a clear
+  superset, import-list merges. Anything where both sides changed the same
+  logic, it parks. Then re-run the land script to confirm clean, then run
+  `test_command`. Only green continues.
+- `error` — park.
+
+The test run after the rebase is not optional. Semantic conflicts rebase
+cleanly and still break the branch: task A renames a function, task B adds a
+caller of the old name in a file A never touched, git reports nothing, and the
+branch is broken. The suite is the only thing that catches this.
+
+### `pr`
+
+Dispatch the `implement` role to run
+`superpowers:finishing-a-development-branch`, answering its menu with option 2
+(push and create a PR). It handles the push and `gh pr create` itself.
+
+Append `pr: <url>` **first**, then read the total duration back out of the
+ledger — appending first is what makes the PR entry the last timestamp, so
+the span covers the whole run:
+
+```bash
+node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>{const l=m.read('.superpowers/autopilot/<branch>/run.md');console.log(m.formatDuration(m.totalDuration(l)))})" "$AP"
+```
+
+Report the URL and the duration together:
+
+```
+PR: <url>
+Run duration: <formatted duration> (<n> stages)
+```
+
+This measures the ledger's first entry to its last, so it starts at
+`started (phase 1)` and excludes preflight, which runs before the ledger
+exists. Say "excludes preflight" when reporting, rather than presenting the
+number as the complete wall-clock time.
+
+Both the total and the per-stage breakdown (`durations()`) are derivable from
+the ledger at any later point — including from a resumed session that never
+saw the earlier stages.
+
+## Parking
+
+Five conditions park a run. Write the reason to the ledger, tell your human
+partner plainly that the run needs a decision, and stop.
+
+- SDD reports BLOCKED — the round-5 breaker on a load-bearing finding
+- Rebase conflicts the resolver will not take confidently
+- Tests red after rebase
+- `test_command` not set, so the branch cannot be verified
+- `gh pr create` fails
+
+Never retry autonomously. Never push a red branch. Never resolve a
+load-bearing ambiguity by guessing.
+
+Append: `PARKED — <reason>`. Use that exact prefix — uppercase `PARKED`
+followed by an em-dash. `nextStage` detects a parked run by matching
+`PARKED` at the start of the ledger's last entry; any other wording silently
+breaks resume detection, and a later `/autopilot resume` will drive the run
+straight past the park.
+
+Report elapsed time alongside the park reason, read the same way as at the
+`pr` stage — append the `PARKED` entry first, then compute. A parked run is
+exactly when your human partner wants to know how much time went in before it
+stopped.
+
+Parking behaves the same whether or not Remote Control is connected. If it is,
+your human partner gets a push notification; if not, they read the ledger.
+Never check for it, never wait on it.
+
+## Common Rationalizations
+
+| Excuse | Reality |
+|---|---|
+| "The spec is approved, I can skip preflight" | Preflight runs before the brainstorm. A missing skill gets improvised into plausible output that skipped the process. |
+| "I'll read the plan to check the work" | Stage outputs stay in files. Reading them into your context is what causes the compaction this design defends against. |
+| "The rebase was clean, tests will pass" | Semantic conflicts rebase clean and break the branch. Run the suite. |
+| "No `test_command` is configured, so there's nothing to run — continue" | An unverifiable branch is not a passing one. Park and say the key is missing. |
+| "I'll infer the test command from package.json" | A guess that exits 0 for the wrong reason reads as green. The project states it, or the run parks. |
+| "This conflict is obvious, I'll resolve it myself" | The resolver is a dispatched agent. Controller fixes skip review. |
+| "I'll just ask about this one contradiction" | Plan governs, logged to the ledger. The final review sees the list. |
+| "The ledger is bookkeeping overhead" | The ledger is what survives compaction. Without it, a resumed run redoes completed stages. |
+| "Appending is just a line in a file — a heredoc is fine" | `append()` stamps the ISO timestamp. A hand-written line has none, so `parseLedger` drops it: `nextStage` goes blind and the run's duration is unrecoverable. |
+| "The run parked, but I know the fix — I'll resume it" | A park is a decision point for your human partner. Resuming past it opens a PR on a branch that parked for a reason. |
+| "Let me restate the design before I start Phase 2" | Every section was approved as it was presented. Re-presenting asks for the same approval twice and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
+| "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the last section is approved. |

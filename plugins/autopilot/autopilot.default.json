@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "brainstorm":        { "model": "opus",   "effort": "high" },
+    "spec":              { "model": "opus",   "effort": "high" },
+    "plan":              { "model": "opus",   "effort": "high" },
+    "implement":         { "model": "sonnet", "effort": "medium" },
+    "implement_complex": { "model": "opus",   "effort": "high" },
+    "task_review":       { "model": "opus",   "effort": "high" },
+    "re_review":         { "model": "sonnet", "effort": "medium" },
+    "final_review":      { "model": "opus",   "effort": "high" },
+    "fix_escalation":    { "model": "opus",   "effort": "high" }
+  },
+  "worktree_dir": ".claude/worktrees",
+  "base_ref": "origin/main",
+  "reaper": true
+}

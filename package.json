@@ -1,0 +1,13 @@
+{
+  "name": "custom-toolkit",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Personal Claude Code plugins",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
