@@ -17,17 +17,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
 
 /**
- * The `### \`sdd\`` section: from its heading line to the next line that
- * starts a heading at exactly `### ` depth. Both boundaries are anchored to
- * the start of a line, so a deeper heading (e.g. `#### \`sdd\``) can't be
- * mistaken for the start, and only a line that is genuinely a `### ` heading
- * can end the section.
+ * The `### \`sdd\`` section: from its heading line to the next heading at the
+ * same level or shallower (`###`, `##`, or `#`).
+ *
+ * Both boundaries are anchored to the start of a line. The start anchor stops
+ * a deeper heading (`#### \`sdd\``) from being mistaken for the section. The
+ * end anchor accepts shallower headings too, so that promoting the following
+ * `### \`land\`` to `## \`land\`` cannot widen this section to swallow it —
+ * which would let contract text living in `land` satisfy assertions that are
+ * supposed to prove it lives in `sdd`.
  */
 function sddSection(markdown) {
   const startMatch = /^### `sdd`.*$/m.exec(markdown);
   if (!startMatch) throw new Error("SKILL.md has no `### \\`sdd\\`` section");
   const rest = markdown.slice(startMatch.index);
-  const endMatch = /\n### .*$/m.exec(rest.slice(startMatch[0].length));
+  const endMatch = /\n#{1,3} .*$/m.exec(rest.slice(startMatch[0].length));
   return endMatch
     ? rest.slice(0, startMatch[0].length + endMatch.index)
     : rest;
