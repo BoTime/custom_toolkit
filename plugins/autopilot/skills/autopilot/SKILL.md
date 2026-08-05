@@ -244,6 +244,40 @@ Write the literal `model`/`effort` values for all six roles into the dispatch
 prompt so the dispatched agent knows exactly what to use for each of SDD's six
 internal dispatch roles without needing to consult autopilot's config itself.
 
+The dispatch prompt also carries a verification contract. Without it the
+stage agent narrates its own verification into the developer's transcript —
+`md5` comparisons before and after a re-run, `echo` separators, throwaway
+repositories built to prove a guard fires — and each one renders as a tool
+call the developer cannot act on. SDD's implementer prompt already caps what
+an agent *returns* ("under 15 lines — the detail lives in the report file");
+nothing caps the work it narrates getting there. This is that cap, and it
+applies to the agent we dispatch. Include text equivalent to:
+
+> Verification contract for this stage:
+>
+> 1. **Verify through `test_command`.** The project states its test command in
+>    `.claude/autopilot.json`. That is the gate. Do not construct ad-hoc
+>    equivalents to check the same thing.
+> 2. **Do not narrate verification.** No `md5` before/after comparisons, no
+>    `echo` separators, no `ls` existence probes, no re-running a command to
+>    demonstrate its idempotence. If a check is worth running, its result is
+>    worth recording in the report file — not in the transcript.
+> 3. **Do not build throwaway repositories to prove a guard fires.** A guard
+>    that needs testing needs a test in the suite.
+> 4. **One gate, one result.** Run the suite once per verification point and
+>    report the outcome.
+>
+> This redirects verification; it does not remove it. Run the gate in rule 1.
+
+Rules 2 and 3 name patterns observed in real runs. Naming them is
+load-bearing: a general instruction to be concise has no purchase on an agent
+that believes each individual check is justified.
+
+This reduces transcript noise; it does not eliminate it. SDD's own nested
+dispatches — implementer, task reviewer, re-reviewer — run under prompts
+belonging to `superpowers:subagent-driven-development`, and their tool calls
+still render.
+
 Answer these gates from config rather than asking:
 
 | Gate | Answer |
