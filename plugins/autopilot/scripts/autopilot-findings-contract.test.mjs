@@ -89,3 +89,54 @@ describe("sdd findings-capture contract", () => {
     expect(section).toMatch(/verification contract/i);
   });
 });
+
+const whole = unwrap(skill);
+
+describe("sdd complete records fix rounds", () => {
+  it("shows the fix-round count in the ledger entry", () => {
+    expect(section).toMatch(/fix rounds/i);
+  });
+
+  it("keeps the `sdd complete` prefix nextStage matches on", () => {
+    // nextStage matches this entry by prefix to resume a run at `land`.
+    // Renaming it silently breaks resume.
+    expect(section).toContain("sdd complete (");
+  });
+
+  it("says why the count is there — a struggling run should be visible", () => {
+    expect(section).toMatch(/at a glance|struggling/i);
+  });
+});
+
+describe("run directory placement", () => {
+  it("gives `<run>` a single definition", () => {
+    expect(whole).toMatch(/`<run>`/);
+  });
+
+  it("states the main-checkout placement", () => {
+    expect(whole).toMatch(/main checkout/i);
+  });
+
+  it("gives the before-the-worktree reason", () => {
+    // The ledger is appended during Phase 1, and `setup` — which creates the
+    // worktree — is the next stage.
+    expect(whole).toMatch(/before the worktree|exists before/i);
+  });
+
+  it("gives the survives-the-worktree reason", () => {
+    // The reaper deletes worktrees after merge; a ledger inside one is
+    // destroyed along with every completed run's PR URL.
+    expect(whole).toMatch(/reaper deletes|survive/i);
+  });
+
+  it("says findings.jsonl inherits the same placement", () => {
+    expect(whole).toMatch(/findings\.jsonl[^.]{0,200}same placement|inherits/i);
+  });
+
+  it("records the worktree-cannot-write-to-main-checkout constraint", () => {
+    // A worktree-isolated session cannot Write/Edit to the main checkout,
+    // though Bash appends and reads work. Recording it stops the next agent
+    // rediscovering it mid-run.
+    expect(whole).toMatch(/Bash append/i);
+  });
+});

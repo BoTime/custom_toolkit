@@ -134,6 +134,29 @@ transition in one line ("Design settled — starting Phase 2") and dispatch.
 
 Do not ask your human partner anything in Phase 2 unless a stage parks.
 
+### The run directory
+
+`<run>` is **one string for the whole run**: the run name chosen at Phase 1,
+used verbatim in every path below. It is not the worktree directory name and
+not the `worktree-` prefixed git branch. Those may differ; `<run>` does not
+change to follow them. Pick it once and reuse it.
+
+The run directory is `.superpowers/autopilot/<run>/` in the **main checkout** —
+never inside the worktree. Both `run.md` and `findings.jsonl` live there, and
+`findings.jsonl` inherits this placement for the same two reasons:
+
+1. **It exists before the worktree does.** `started (phase 1)` and
+   `design approved` are appended during Phase 1, and `setup` — the stage that
+   creates the worktree — comes after them.
+2. **It must survive the worktree.** The reaper deletes worktrees after merge.
+   A ledger inside one destroys the record of every completed run, including
+   the PR URL that `nextStage` returns `done` on.
+
+**Known constraint:** a worktree-isolated session cannot Write or Edit files in
+the main checkout, though **Bash appends (`>>`) and reads still work**. Use a
+Bash append for `run.md` (via `autopilot-ledger.mjs`) and for `findings.jsonl`.
+This is a harness limitation, recorded here so it is not rediscovered mid-run.
+
 **Every dispatch:** generate a subagent definition carrying the role's model
 and effort from `.claude/autopilot.json`, write it to
 `.superpowers/autopilot/<branch>/agents/<role>.md`, and dispatch by that
@@ -333,7 +356,14 @@ Answer these gates from config rather than asking:
 
 SDD reporting BLOCKED is not answered from config. It parks.
 
-Append: `sdd complete (<n> tasks, <k> parked)`.
+Append: `sdd complete (<n> tasks, <k> parked, <f> fix rounds across <t> tasks)`
+— for example `sdd complete (10 tasks, 0 parked, 7 fix rounds across 4 tasks)`.
+Count a fix round every time a task returns to its implementer after a review
+finding; `<t>` is how many distinct tasks needed at least one. Keep the
+`sdd complete (` prefix exactly — `nextStage` matches it to resume the run at
+`land`. Without the fix-round clause, a run where every task needed three
+rounds renders identically to one where all passed first try, so a struggling
+run is invisible at a glance.
 
 ### `land`
 
