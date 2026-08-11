@@ -140,3 +140,43 @@ describe("run directory placement", () => {
     expect(whole).toMatch(/Bash append/i);
   });
 });
+
+describe("plugin packaging", () => {
+  const pluginJson = JSON.parse(
+    readFileSync(join(HERE, "..", ".claude-plugin", "plugin.json"), "utf8"),
+  );
+  const marketplace = JSON.parse(
+    readFileSync(join(HERE, "..", "..", "..", ".claude-plugin", "marketplace.json"), "utf8"),
+  );
+
+  it("registers the commands directory so the new command loads", () => {
+    expect(pluginJson.commands).toEqual(["./commands/"]);
+  });
+
+  it("is at version 1.3.0", () => {
+    expect(pluginJson.version).toBe("1.3.0");
+  });
+
+  it("bumps the marketplace plugin entry to the same version", () => {
+    const entry = marketplace.plugins.find((p) => p.name === "autopilot");
+    expect(entry.version).toBe("1.3.0");
+  });
+
+  it("bumps the marketplace metadata block too", () => {
+    // Two places in one file. Bumping only the plugin entry is the drift this
+    // pins.
+    expect(marketplace.metadata.version).toBe("1.3.0");
+  });
+
+  it("ships the findings command", () => {
+    const command = readFileSync(
+      join(HERE, "..", "commands", "autopilot-findings.md"),
+      "utf8",
+    );
+    expect(command).toContain("autopilot-findings.mjs");
+    expect(command).toContain("findings_threshold");
+    // The command proposes; the human disposes.
+    expect(command).toMatch(/approv/i);
+    expect(command).toMatch(/do not (write|inject)/i);
+  });
+});

@@ -2,11 +2,12 @@
   "name": "autopilot",
   "displayName": "Autopilot",
   "description": "Take a task from idea to pull request: interactive brainstorm, then automated spec, plan, implementation, landing, and PR",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": {
     "name": "Botime"
   },
   "license": "MIT",
   "keywords": ["workflow", "automation", "pull-request", "planning"],
-  "skills": ["./skills/"]
+  "skills": ["./skills/"],
+  "commands": ["./commands/"]
 }
