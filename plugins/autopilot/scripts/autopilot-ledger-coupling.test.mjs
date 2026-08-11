@@ -65,4 +65,15 @@ describe("SKILL.md <-> nextStage coupling", () => {
     const ledger = buildLedger(cumulative);
     expect(nextStage(parseLedger(ledger))).toBe("land");
   });
+
+  it('"sdd complete" with fix-round counts still returns "land"', () => {
+    // The entry grew a fix-round clause. nextStage matches it by PREFIX, so
+    // the longer wording must keep resolving to the same stage.
+    const cumulative = [
+      ...STAGE_ENTRIES.slice(0, 5).map(([text]) => text), // through "plan complete"
+      "sdd complete (10 tasks, 0 parked, 7 fix rounds across 4 tasks)",
+    ];
+    const ledger = buildLedger(cumulative);
+    expect(nextStage(parseLedger(ledger))).toBe("land");
+  });
 });

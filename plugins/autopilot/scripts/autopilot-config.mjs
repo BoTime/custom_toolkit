@@ -7,7 +7,7 @@ export const ROLES = [
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
-const TOP_LEVEL = ["worktree_dir", "base_ref", "reaper"];
+const TOP_LEVEL = ["worktree_dir", "base_ref", "reaper", "findings_threshold"];
 
 /**
  * Merge a project config over the plugin defaults.
@@ -61,6 +61,16 @@ export function validateConfig(obj, env) {
 
   for (const key of TOP_LEVEL) {
     if (obj[key] === undefined) errors.push(`${key}: missing`);
+  }
+
+  // A threshold below 1 promotes every one-off finding into a candidate, which
+  // is exactly the noise the threshold exists to filter.
+  const threshold = obj.findings_threshold;
+  if (
+    threshold !== undefined &&
+    (!Number.isInteger(threshold) || threshold < 1)
+  ) {
+    errors.push("findings_threshold: must be a positive integer");
   }
 
   // test_command is the one genuinely project-specific key, so it has no

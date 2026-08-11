@@ -134,6 +134,31 @@ transition in one line ("Design settled — starting Phase 2") and dispatch.
 
 Do not ask your human partner anything in Phase 2 unless a stage parks.
 
+### The run directory
+
+`<run>` is **one string for the whole run**: the run name chosen at Phase 1.
+The `<branch>` placeholder in the run-directory paths below refers to this same
+string — the two are interchangeable names for one value, not two. It is not
+the worktree directory name and not the `worktree-` prefixed git branch. Those
+may differ; `<run>` does not change to follow them. Pick it once and reuse it
+verbatim in every run-directory path.
+
+The run directory is `.superpowers/autopilot/<run>/` in the **main checkout** —
+never inside the worktree. Both `run.md` and `findings.jsonl` live there, and
+`findings.jsonl` inherits this placement for the same two reasons:
+
+1. **It exists before the worktree does.** `started (phase 1)` and
+   `design approved` are appended during Phase 1, and `setup` — the stage that
+   creates the worktree — comes after them.
+2. **It must survive the worktree.** The reaper deletes worktrees after merge.
+   A ledger inside one destroys the record of every completed run, including
+   the PR URL that `nextStage` returns `done` on.
+
+**Known constraint:** a worktree-isolated session cannot Write or Edit files in
+the main checkout, though **Bash appends (`>>`) and reads still work**. Use a
+Bash append for `run.md` (via `autopilot-ledger.mjs`) and for `findings.jsonl`.
+This is a harness limitation, recorded here so it is not rediscovered mid-run.
+
 **Every dispatch:** generate a subagent definition carrying the role's model
 and effort from `.claude/autopilot.json`, write it to
 `.superpowers/autopilot/<branch>/agents/<role>.md`, and dispatch by that
@@ -279,6 +304,50 @@ dispatches — implementer, task reviewer, re-reviewer — run under prompts
 belonging to `superpowers:subagent-driven-development`, and their tool calls
 still render.
 
+The dispatch prompt also carries a findings capture contract. SDD generates
+review findings and then discards them: task reports are written after the fix
+and describe the corrected state, so they read as success narratives. In a real
+repository, ten task reports mentioned not one review finding, fix round, or
+rejected verdict. The signal is real — two findings in a single run were both
+attributable to the brief rather than the implementer — but nothing survives to
+show it. Include text equivalent to:
+
+> Findings capture contract for this stage:
+>
+> 1. **Append one JSON line per review finding** to
+>    `.superpowers/autopilot/<run>/findings.jsonl` in the **main checkout**,
+>    beside `run.md` — not inside the worktree, which the reaper deletes. Use a
+>    Bash append (`>>`); a worktree-isolated session cannot Write/Edit to the
+>    main checkout, but Bash appends work.
+> 2. **Every finding line carries all seven fields**: `task` (number), `round`
+>    (number), `severity`, `stage_at_fault`, `pattern`, `detail`, `verdict`.
+>    A line missing any of them is dropped by the analyzer.
+> 3. **`stage_at_fault` is one of `brief`, `plan`, `spec`, `implementation`** —
+>    the stage that produced the bad input, not the stage that surfaced it. A
+>    defect the brief introduced must not be recorded as an implementation
+>    error; framing every finding as a model mistake tunes the wrong stage.
+>    Invent no other values.
+> 4. **`pattern` is a short canonical phrase; `detail` carries the specifics.**
+>    Clustering is a pure lexical match over `pattern`, so a phrase rewritten
+>    per finding clusters with nothing. Reuse a phrase you have used before
+>    when the defect is the same kind.
+> 5. **A task that passes review writes an explicit clean line**:
+>    `{"task": N, "clean": true}`. This is not optional bookkeeping. Without
+>    it, absence of evidence is indistinguishable from evidence of absence:
+>    occurrence counts become a floor rather than a count, and no threshold can
+>    be trusted.
+>
+> Example lines:
+>
+> ```
+> {"task":4,"round":1,"severity":"major","stage_at_fault":"brief","pattern":"brief introduced dead code","detail":"service._logger added by the brief is never wired","verdict":"CONFIRMED"}
+> {"task":5,"clean":true}
+> ```
+
+A general instruction to "log findings" will not bind. The rules above name the
+concrete expected behavior for the same reason the verification contract's
+rules 2 and 3 do.
+
 Answer these gates from config rather than asking:
 
 | Gate | Answer |
@@ -289,7 +358,14 @@ Answer these gates from config rather than asking:
 
 SDD reporting BLOCKED is not answered from config. It parks.
 
-Append: `sdd complete (<n> tasks, <k> parked)`.
+Append: `sdd complete (<n> tasks, <k> parked, <f> fix rounds across <t> tasks)`
+— for example `sdd complete (10 tasks, 0 parked, 7 fix rounds across 4 tasks)`.
+Count a fix round every time a task returns to its implementer after a review
+finding; `<t>` is how many distinct tasks needed at least one. Keep the
+`sdd complete (` prefix exactly — `nextStage` matches it to resume the run at
+`land`. Without the fix-round clause, a run where every task needed three
+rounds renders identically to one where all passed first try, so a struggling
+run is invisible at a glance.
 
 ### `land`
 
