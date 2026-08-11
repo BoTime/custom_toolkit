@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { STAGES, parseFindings } from "./autopilot-findings.mjs";
-import { collectCorpus, formatReport } from "./autopilot-findings.mjs";
+import { collectCorpus, formatReport, splitThresholdFlag } from "./autopilot-findings.mjs";
 
 const finding = (over = {}) => ({
   task: 4,
@@ -284,5 +284,33 @@ describe("formatReport", () => {
   it("omits the malformed note when the corpus is clean", () => {
     const out = formatReport([], { threshold: 2, cleanCount: 1, malformed: 0 });
     expect(out).not.toMatch(/malformed/i);
+  });
+});
+
+// `--threshold=2` is what a human types. Taken positionally it landed in the
+// ROOT slot and parsed as NaN, and `count >= NaN` is false for every cluster —
+// so a corpus with real recurring findings reported "no candidates". A wrong
+// threshold has to fail loudly; silently emptying the report is the one
+// outcome that reads as success.
+describe("threshold flag parsing", () => {
+  it("extracts --threshold=N and leaves the positional args alone", () => {
+    const { positional, flagValue } = splitThresholdFlag([
+      "report",
+      ".superpowers/autopilot",
+      "--threshold=3",
+    ]);
+    expect(flagValue).toBe("3");
+    expect(positional).toEqual(["report", ".superpowers/autopilot"]);
+  });
+
+  it("does not mistake the flag for the corpus root", () => {
+    const { positional } = splitThresholdFlag(["report", "--threshold=2"]);
+    expect(positional).toEqual(["report"]);
+  });
+
+  it("reports no flag when none is given", () => {
+    const { positional, flagValue } = splitThresholdFlag(["report", "somedir", "4"]);
+    expect(flagValue).toBeUndefined();
+    expect(positional).toEqual(["report", "somedir", "4"]);
   });
 });

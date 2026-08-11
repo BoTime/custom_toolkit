@@ -207,15 +207,45 @@ export function formatReport(clusters, { threshold, cleanCount, malformed }) {
   return lines.join("\n");
 }
 
+/**
+ * Pull `--threshold=N` out of argv, returning it alongside the positional
+ * arguments. Both spellings are accepted because `--threshold=2` is what a
+ * human reaches for, and taking it positionally made it parse as the ROOT —
+ * `Number("--threshold=2")` is NaN, and `count >= NaN` is false for every
+ * cluster, so the report printed "no candidates" for a corpus that had them.
+ * A bad threshold must fail loudly, never silently empty the report.
+ */
+export function splitThresholdFlag(argv) {
+  const positional = [];
+  let flagValue;
+  for (const arg of argv) {
+    const match = /^--threshold=(.*)$/.exec(arg);
+    if (match) flagValue = match[1];
+    else positional.push(arg);
+  }
+  return { positional, flagValue };
+}
+
 /** `report [root] [threshold]` prints the candidate report. */
 export function main(argv = process.argv.slice(2)) {
-  const [command, root = ".superpowers/autopilot", rawThreshold = "2"] = argv;
+  const { positional, flagValue } = splitThresholdFlag(argv);
+  const [command, root = ".superpowers/autopilot", positionalThreshold] = positional;
   if (command !== "report") {
-    console.error("usage: autopilot-findings.mjs report [root] [threshold]");
+    console.error(
+      "usage: autopilot-findings.mjs report [root] [threshold|--threshold=N]",
+    );
     process.exitCode = 1;
     return;
   }
+  const rawThreshold = flagValue ?? positionalThreshold ?? "2";
   const threshold = Number(rawThreshold);
+  if (!Number.isInteger(threshold) || threshold < 1) {
+    console.error(
+      `bad threshold: ${JSON.stringify(rawThreshold)} — expected a positive integer`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   const { entries, cleanCount, malformed } = collectCorpus(root);
   const clusters = candidates(clusterFindings(entries), threshold);
   console.log(formatReport(clusters, { threshold, cleanCount, malformed }));
