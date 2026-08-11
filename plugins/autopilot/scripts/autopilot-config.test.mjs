@@ -17,6 +17,7 @@ const validConfig = () => ({
   base_ref: "origin/main",
   test_command: "npm test",
   reaper: true,
+  findings_threshold: 2,
 });
 
 describe("ROLES and EFFORTS", () => {
@@ -107,6 +108,42 @@ describe("validateConfig", () => {
     const result = validateConfig(validConfig(), {});
     expect(result.warnings).toEqual([]);
   });
+
+  it("rejects a missing findings_threshold", () => {
+    const cfg = validConfig();
+    delete cfg.findings_threshold;
+    const result = validateConfig(cfg, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("findings_threshold: missing");
+  });
+
+  it("rejects a non-integer findings_threshold", () => {
+    const cfg = validConfig();
+    cfg.findings_threshold = 2.5;
+    const result = validateConfig(cfg, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "findings_threshold: must be a positive integer",
+    );
+  });
+
+  it("rejects a findings_threshold below 1", () => {
+    // A threshold of 0 would promote every one-off finding into a candidate,
+    // which is the noise the threshold exists to filter.
+    const cfg = validConfig();
+    cfg.findings_threshold = 0;
+    const result = validateConfig(cfg, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "findings_threshold: must be a positive integer",
+    );
+  });
+
+  it("accepts a findings_threshold of 1", () => {
+    const cfg = validConfig();
+    cfg.findings_threshold = 1;
+    expect(validateConfig(cfg, {}).ok).toBe(true);
+  });
 });
 
 describe("mergeConfig", () => {
@@ -143,6 +180,11 @@ describe("mergeConfig", () => {
     delete defaults.test_command;
     const merged = mergeConfig(defaults, { test_command: "uv run pytest" });
     expect(merged.test_command).toBe("uv run pytest");
+  });
+
+  it("lets a project override findings_threshold", () => {
+    const merged = mergeConfig(validConfig(), { findings_threshold: 5 });
+    expect(merged.findings_threshold).toBe(5);
   });
 });
 
@@ -207,5 +249,11 @@ describe("loadConfig", () => {
     expect(() => loadConfig(PROJECT, {}, readFile, DEFAULTS)).toThrow(
       /autopilot\.json is not valid JSON/,
     );
+  });
+
+  it("ships a findings_threshold default when the project sets none", () => {
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
+    const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.findings_threshold).toBe(2);
   });
 });

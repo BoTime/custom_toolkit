@@ -12,5 +12,6 @@
   },
   "worktree_dir": ".claude/worktrees",
   "base_ref": "origin/main",
-  "reaper": true
+  "reaper": true,
+  "findings_threshold": 2
 }
