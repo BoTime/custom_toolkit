@@ -1,6 +1,6 @@
 ---
 name: autopilot-brainstorm
-description: Use during autopilot's Phase 1 to brainstorm a task into an approved design through natural collaborative dialogue. Explores user intent, requirements and design before implementation, then hands the approved design back to the autopilot orchestrator in conversation only as soon as the last section is approved — it does not re-present the design, and it does not write or commit a spec file.
+description: Use during autopilot's Phase 1 to brainstorm a task into a settled design through natural collaborative dialogue. Explores user intent, requirements and approach through clarifying questions, then states the resulting design and hands it back to the autopilot orchestrator in conversation only — it does not ask for design approval, and it does not write or commit a spec file.
 ---
 
 # Brainstorming Ideas Into Designs (autopilot fork)
@@ -13,20 +13,26 @@ description: Use during autopilot's Phase 1 to brainstorm a task into an approve
 > happened to be on. This fork removes the write-and-commit step: the
 > brainstorm produces an approved design in conversation only, and hands it
 > back to autopilot, which writes the spec inside the worktree at its own
-> `spec` stage. See
+> `spec` stage. It also removes the design-approval gate: the clarifying
+> questions are where the developer steers, and the design that falls out of
+> their answers is stated once and handed straight to Phase 2. See
 > `docs/superpowers/specs/2026-07-29-autopilot-workflow-design.md`.
 
 Help turn ideas into fully formed designs through natural collaborative dialogue.
 
-Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
+Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, state the design and hand it back — the questions were the approval.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action while you are still asking questions. The questions come first, and they come one at a time. This applies to EVERY project regardless of perceived simplicity.
 </HARD-GATE>
 
-## Anti-Pattern: "This Is Too Simple To Need A Design"
+## Anti-Pattern: "This Is Too Simple To Need Questions"
 
-Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The questions can be few for a genuinely simple task, and the design statement can be a few sentences, but you MUST ask enough to know what you are building before you state it.
+
+## Anti-Pattern: "Let Me Just Confirm The Design"
+
+The clarifying questions ARE the approval mechanism. Every decision in the design traces back to an answer the developer gave, so presenting the design back as a gate asks them to approve their own answers. Do NOT ask "does this look right?", "shall I proceed?", "any changes before I start?", or any variant. State the design and hand back in the same message. If a question is genuinely unresolved, that is a clarifying question — ask it during the questions, not as a gate afterward.
 
 ## Checklist
 
@@ -34,10 +40,9 @@ You MUST create a task for each of these items and complete them in order:
 
 1. **Explore project context** — check files, docs, recent commits
 2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
-3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
-4. **Propose 2-3 approaches** — with trade-offs and your recommendation
-5. **Present design** — in sections scaled to their complexity, get user approval after each section
-6. **Hand back to autopilot** — the moment the last section is approved, return control to the autopilot orchestrator immediately. Do NOT re-present the design as a whole; every section has already been approved individually. Nothing is written to disk and nothing is committed; the design lives in conversation only.
+3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. This is the only place the developer steers, so keep asking until nothing load-bearing is unresolved.
+4. **Propose 2-3 approaches** — with trade-offs and your recommendation. The developer's pick is the last decision they make.
+5. **State the design and hand back** — in one message: the design as settled by their answers, then control returned to the autopilot orchestrator. No approval gate. Nothing is written to disk and nothing is committed; the design lives in conversation only.
 
 ## Process Flow
 
@@ -45,24 +50,23 @@ You MUST create a task for each of these items and complete them in order:
 digraph brainstorming {
     "Explore project context" [shape=box];
     "Ask clarifying questions" [shape=box];
+    "Anything unresolved?" [shape=diamond];
     "Propose 2-3 approaches" [shape=box];
-    "Present design sections" [shape=box];
-    "User approves design?" [shape=diamond];
-    "Hand approved design back to autopilot" [shape=doublecircle];
+    "State design + hand back to autopilot" [shape=doublecircle];
 
     "Explore project context" -> "Ask clarifying questions";
-    "Ask clarifying questions" -> "Propose 2-3 approaches";
-    "Propose 2-3 approaches" -> "Present design sections";
-    "Present design sections" -> "User approves design?";
-    "User approves design?" -> "Present design sections" [label="no, revise"];
-    "User approves design?" -> "Hand approved design back to autopilot" [label="last section approved"];
+    "Ask clarifying questions" -> "Anything unresolved?";
+    "Anything unresolved?" -> "Ask clarifying questions" [label="yes, ask another"];
+    "Anything unresolved?" -> "Propose 2-3 approaches" [label="no"];
+    "Propose 2-3 approaches" -> "State design + hand back to autopilot" [label="developer picks"];
 }
 ```
 
-Note there is no re-presentation step between the last approval and the
-handoff. Approval of the final section is the transition.
+Note there is no approval gate anywhere after the questions. The only loop is
+the question loop — ambiguity is resolved by asking another question, never by
+presenting a design for sign-off.
 
-**The terminal state is handing the approved design back to autopilot.** Do NOT write a spec file, do NOT commit anything, and do NOT invoke writing-plans, frontend-design, mcp-builder, or any other implementation skill. Autopilot's own `spec` stage writes the design to disk (inside the run's worktree) and its own `plan` stage invokes writing-plans afterward.
+**The terminal state is handing the settled design back to autopilot.** Do NOT write a spec file, do NOT commit anything, and do NOT invoke writing-plans, frontend-design, mcp-builder, or any other implementation skill. Autopilot's own `spec` stage writes the design to disk (inside the run's worktree) and its own `plan` stage invokes writing-plans afterward.
 
 ## The Process
 
@@ -75,6 +79,7 @@ handoff. Approval of the final section is the transition.
 - Prefer multiple choice questions when possible, but open-ended is fine too
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Focus on understanding: purpose, constraints, success criteria
+- The questions carry the whole weight of the developer's input — there is no approval gate downstream to catch a wrong assumption. If you notice yourself planning to "confirm that in the design", ask it here instead.
 
 **Exploring approaches:**
 
@@ -83,16 +88,17 @@ handoff. Approval of the final section is the transition.
 - Lead with your recommended option and explain why
 - YAGNI ruthlessly - remove unnecessary features from every approach and design
 
-**Presenting the design:**
+**Stating the design:**
 
-- Once you believe you understand what you're building, present the design
-- Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
-- Ask after each section whether it looks right so far
+- Once you understand what you're building, state the design once — as the
+  record of what the answers settled on, not as a request for sign-off
+- Scale each part to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
 - Cover: architecture, components, data flow, error handling, testing
-- Be ready to go back and clarify if something doesn't make sense
-- Section-by-section approval is the whole approval. When the final section is
-  approved, the design is approved — hand back to autopilot rather than
-  restating it for one more round of confirmation.
+- Do NOT pause between parts for approval, and do NOT close with a question.
+  The message that states the design is the same message that hands back.
+- If stating it surfaces something you cannot settle from the answers you have,
+  that is a missed clarifying question — ask it, then state the design. Asking
+  one more real question is always better than a gate that pretends to be one.
 
 **Design for isolation and clarity:**
 
@@ -111,12 +117,11 @@ handoff. Approval of the final section is the transition.
 
 **Hand back to autopilot — the only step:**
 
-- The last section's approval is the last decision. Hand back immediately —
-  do NOT re-present the design as a whole, do NOT summarize it back for a
-  second confirmation, and do NOT ask "shall I start?" or any other
-  proceed-check. Every section was approved as it was presented; asking again
-  is asking the developer to approve the same thing twice, and Phase 2 begins
-  the instant the brainstorm returns.
+- The developer's answers to the clarifying questions are the last decisions.
+  Hand back in the same message that states the design — do NOT ask for
+  approval, do NOT summarize it back for confirmation, and do NOT ask "shall I
+  start?" or any other proceed-check. Phase 2 begins the instant the brainstorm
+  returns, and running `/autopilot` was the developer's authorization for that.
 - Do NOT write it to a file. Do NOT commit anything. The design lives in
   conversation only — autopilot's own `spec` stage is what writes it to
   `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commits it, and

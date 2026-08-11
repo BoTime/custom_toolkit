@@ -110,24 +110,25 @@ task, not the spec, because the ledger exists before the spec file does:
 
 Invoke `autopilot:autopilot-brainstorm` with the task description. It is a fork of
 `superpowers:brainstorming` that stops short of writing a spec file: it
-explores, asks questions, proposes approaches, and presents the design
-section by section, then hands the approved design back to you in
-conversation once your human partner approves it. Nothing is written to disk
-or committed during this phase.
+explores, asks clarifying questions one at a time, proposes approaches, then
+states the resulting design and hands it back to you in conversation. It does
+not ask for design approval — the clarifying questions are where your human
+partner steers. Nothing is written to disk or committed during this phase.
 
 Append to the ledger: `started (phase 1)` at invocation, `design approved`
-when they approve. The spec file itself is written and committed at the
-`spec` stage, inside the worktree — nothing is written to the developer's
-checkout.
+when the brainstorm hands the design back. That ledger entry keeps its name —
+`nextStage` matches on it to resume a run at `setup` — and it now records the
+design settling, not a separate approval step. The spec file itself is written
+and committed at the `spec` stage, inside the worktree — nothing is written to
+the developer's checkout.
 
-**The last section's approval ends Phase 1.** When the brainstorm hands the
-design back, append `design approved` and go straight into `setup` in the
-same turn. Do not re-present the design, do not summarize it back for
-confirmation, and do not ask whether to proceed — every section was approved
-as it was presented, and the design was approved once already. The only thing
-a proceed-check adds is a second approval of the same decisions, which is
-exactly the handoff friction Phase 2 exists to remove. Announce the
-transition in one line ("Design approved — starting Phase 2") and dispatch.
+**The brainstorm's handoff ends Phase 1.** When it hands the design back,
+append `design approved` and go straight into `setup` in the same turn. Do not
+re-present the design, do not summarize it back for confirmation, and do not
+ask whether to proceed. The clarifying questions already collected every
+decision, so a proceed-check adds nothing but a second pass over the same
+answers — exactly the handoff friction Phase 2 exists to remove. Announce the
+transition in one line ("Design settled — starting Phase 2") and dispatch.
 
 ## Phase 2 — automated
 
@@ -413,5 +414,6 @@ Never check for it, never wait on it.
 | "The ledger is bookkeeping overhead" | The ledger is what survives compaction. Without it, a resumed run redoes completed stages. |
 | "Appending is just a line in a file — a heredoc is fine" | `append()` stamps the ISO timestamp. A hand-written line has none, so `parseLedger` drops it: `nextStage` goes blind and the run's duration is unrecoverable. |
 | "The run parked, but I know the fix — I'll resume it" | A park is a decision point for your human partner. Resuming past it opens a PR on a branch that parked for a reason. |
-| "Let me restate the design before I start Phase 2" | Every section was approved as it was presented. Re-presenting asks for the same approval twice and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
-| "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the last section is approved. |
+| "Let me restate the design before I start Phase 2" | The clarifying questions already collected every decision. Re-presenting asks your human partner to approve their own answers and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
+| "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the brainstorm hands the design back. |
+| "The design has a gap — I'll present it and ask" | A gap is a missed clarifying question, and the questions are still open while the brainstorm runs. Ask it there. Once the brainstorm hands back, Phase 2 owns the run. |
