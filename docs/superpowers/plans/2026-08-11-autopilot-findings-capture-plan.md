@@ -396,7 +396,7 @@ export function clusterFindings(entries) {
 
   for (const { run, findings } of entries) {
     for (const f of findings ?? []) {
-      const key = `${f.stage_at_fault} ${f.pattern}`;
+      const key = `${f.stage_at_fault} ${f.pattern}`;
       if (!byKey.has(key)) {
         byKey.set(key, {
           stage_at_fault: f.stage_at_fault,
