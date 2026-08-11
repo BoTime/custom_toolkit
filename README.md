@@ -16,8 +16,10 @@ To update later: `/plugin marketplace update custom-toolkit`.
 
 ### autopilot
 
-Takes a task from idea to pull request. Phase 1 is an interactive brainstorm;
-Phase 2 runs unattended through spec, plan, implementation, landing, and PR.
+Takes a task from idea to pull request. Phase 1 is an interactive brainstorm —
+clarifying questions one at a time, then a design stated once, with no
+approval gate afterward. Phase 2 runs unattended from there through spec,
+plan, implementation, landing, and PR.
 
 ```
 /autopilot <task description>
@@ -26,8 +28,9 @@ Phase 2 runs unattended through spec, plan, implementation, landing, and PR.
 
 Provides two skills — `autopilot` (the orchestrator) and
 `autopilot-brainstorm` (Phase 1, a fork of `superpowers:brainstorming` that
-hands its approved design back in conversation rather than writing a spec
-file).
+hands its design back in conversation rather than writing a spec file, and
+drops the design-approval gate so Phase 2 starts as soon as the questions are
+answered).
 
 **Requires** the `superpowers` plugin: autopilot's preflight checks for
 `writing-plans`, `subagent-driven-development`, `requesting-code-review`,
