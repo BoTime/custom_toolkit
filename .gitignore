@@ -3,4 +3,9 @@ node_modules/
 *.log
 .superpowers/
 
-.claude/
+# Ignore .claude/ contents, but not the directory itself — git cannot unignore
+# a file inside an excluded directory, and autopilot.json must stay tracked.
+.claude/*
+# Project config, not personal settings — autopilot's land stage needs it to
+# verify a branch, so it has to survive a fresh clone.
+!.claude/autopilot.json
