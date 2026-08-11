@@ -136,10 +136,12 @@ Do not ask your human partner anything in Phase 2 unless a stage parks.
 
 ### The run directory
 
-`<run>` is **one string for the whole run**: the run name chosen at Phase 1,
-used verbatim in every path below. It is not the worktree directory name and
-not the `worktree-` prefixed git branch. Those may differ; `<run>` does not
-change to follow them. Pick it once and reuse it.
+`<run>` is **one string for the whole run**: the run name chosen at Phase 1.
+The `<branch>` placeholder in the run-directory paths below refers to this same
+string — the two are interchangeable names for one value, not two. It is not
+the worktree directory name and not the `worktree-` prefixed git branch. Those
+may differ; `<run>` does not change to follow them. Pick it once and reuse it
+verbatim in every run-directory path.
 
 The run directory is `.superpowers/autopilot/<run>/` in the **main checkout** —
 never inside the worktree. Both `run.md` and `findings.jsonl` live there, and

@@ -40,7 +40,9 @@ Then ask, one candidate at a time:
 
 Append approved candidates to `.superpowers/autopilot/rules.md` in the **main
 checkout**, each with its stage, its pattern, and a one-line count of the
-evidence behind it.
+evidence behind it. From a worktree-isolated session, append with Bash (`>>`) —
+Write and Edit to the main checkout do not work, though Bash appends and reads
+still do.
 
 **Do not write any rule into a stage prompt.** Injection is deliberately out of
 scope: an approved candidate is recorded for a human to act on later, never
