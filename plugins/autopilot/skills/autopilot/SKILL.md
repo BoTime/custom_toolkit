@@ -237,7 +237,34 @@ Append: `spec committed → <path>`.
 Dispatch the `plan` role. It invokes `superpowers:writing-plans` against the
 approved spec and returns the plan path.
 
-Append: `plan complete → <path>`.
+The dispatch prompt also carries a task-count budget. Task count is the single
+largest driver of a run's wall-clock time: `sdd` is ~66% of every run measured,
+and it costs a near-constant 3–12 minutes per task because
+`subagent-driven-development` forbids parallel implementer dispatch, so tasks
+run strictly serially. Across real runs, 5 tasks landed in 17–23m, 10 tasks in
+80m, and 16 tasks in 191m. Nothing else in the pipeline moves the total that
+far, so this budget belongs at the stage that sets the multiplier. Include text
+equivalent to:
+
+> Task-count budget for this plan:
+>
+> 1. **Target 5–8 tasks.** Every task costs a serial implementer dispatch plus
+>    a review round, so task count multiplies the run's wall clock directly.
+> 2. **Merge trivially-coupled steps into one task.** Two steps belong together
+>    when one cannot be reviewed or tested without the other — a function and
+>    its only caller, a field and the migration that adds it. Splitting those
+>    buys no reviewability and costs a full dispatch cycle.
+> 3. **Do not merge steps that touch unrelated subsystems**, and do not merge
+>    to hit the number. A task that cannot be reviewed as one diff is two
+>    tasks. Correctness outranks the budget.
+> 4. **If the work genuinely needs more than 8 tasks, write them** and say why
+>    in the plan. This is a budget, not a cap.
+
+Rule 3 is load-bearing: a bare instruction to emit fewer tasks produces
+oversized tasks whose diffs defeat task review, which converts a wall-clock
+saving into fix rounds that cost more than the tasks saved.
+
+Append: `plan complete → <path> (<n> tasks)`.
 
 ### `sdd`
 
