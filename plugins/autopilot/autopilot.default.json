@@ -5,7 +5,7 @@
     "plan":              { "model": "opus",   "effort": "high" },
     "implement":         { "model": "sonnet", "effort": "medium" },
     "implement_complex": { "model": "opus",   "effort": "high" },
-    "task_review":       { "model": "opus",   "effort": "high" },
+    "task_review":       { "model": "sonnet", "effort": "medium" },
     "re_review":         { "model": "sonnet", "effort": "medium" },
     "final_review":      { "model": "opus",   "effort": "high" },
     "fix_escalation":    { "model": "opus",   "effort": "high" }
