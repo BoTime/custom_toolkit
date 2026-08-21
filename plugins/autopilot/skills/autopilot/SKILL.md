@@ -198,7 +198,21 @@ skip if so.
 
 ### `setup`
 
-Unless `reaper` is `false` in config, run from the repository root:
+Run this unconditionally, first, from the repository root — before the
+reaper conditional below, regardless of `reaper`'s value. It fetches
+`origin` and best-effort fast-forwards `base_ref`'s local branch, so the
+worktree below is always built from fresh state even when the reaper is
+disabled or `base_ref` names a bare local branch the reaper's own fetch
+never touches:
+
+```bash
+node "$AP/scripts/autopilot-sync-base.mjs" --base=<config.base_ref>
+```
+
+Report its outcome (updated or skipped, with reason) the same way the
+reaper's keep/reason list is already reported.
+
+Unless `reaper` is `false` in config, also run from the repository root:
 
 ```bash
 node "$AP/scripts/autopilot-reaper.mjs" --apply \
