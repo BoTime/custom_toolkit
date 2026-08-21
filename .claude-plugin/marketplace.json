@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Personal Claude Code plugins",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "plugins": [
     {
       "name": "autopilot",
       "source": "./plugins/autopilot",
       "description": "Take a task from idea to pull request: interactive brainstorm, then automated spec, plan, implementation, landing, and PR",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "author": {
         "name": "Botime"
       },
