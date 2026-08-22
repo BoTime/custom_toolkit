@@ -262,7 +262,7 @@ equivalent to:
 
 > Task-count budget for this plan:
 >
-> 1. **Target 5–8 tasks.** Every task costs a serial implementer dispatch plus
+> 1. **Target 3–5 tasks.** Every task costs a serial implementer dispatch plus
 >    a review round, so task count multiplies the run's wall clock directly.
 > 2. **Merge trivially-coupled steps into one task.** Two steps belong together
 >    when one cannot be reviewed or tested without the other — a function and
@@ -271,7 +271,7 @@ equivalent to:
 > 3. **Do not merge steps that touch unrelated subsystems**, and do not merge
 >    to hit the number. A task that cannot be reviewed as one diff is two
 >    tasks. Correctness outranks the budget.
-> 4. **If the work genuinely needs more than 8 tasks, write them** and say why
+> 4. **If the work genuinely needs more than 5 tasks, write them** and say why
 >    in the plan. This is a budget, not a cap.
 
 Rule 3 is load-bearing: a bare instruction to emit fewer tasks produces
