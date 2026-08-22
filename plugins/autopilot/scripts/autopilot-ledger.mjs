@@ -35,7 +35,8 @@ export function nextStage(ledger) {
 
   if (has("pr:")) return "done";
   if (has("rebase clean")) return "pr";
-  if (has("sdd complete")) return "land";
+  if (has("learnings committed")) return "land";
+  if (has("sdd complete")) return "learnings";
   if (has("plan complete")) return "sdd";
   if (has("spec committed")) return "plan";
   if (has("worktree:")) return "spec";

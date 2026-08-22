@@ -15,7 +15,7 @@
 //      autopilot's parking section warns about.
 //
 // Sibling of autopilot-ledger-coupling.test.mjs, which stays focused on
-// autopilot's own eight entries.
+// autopilot's own nine entries.
 
 import { describe, it, expect } from "vitest";
 import { parseLedger, nextStage } from "./autopilot-ledger.mjs";
@@ -23,13 +23,13 @@ import { GITHUB_LEDGER_LINES } from "./autopilot-github-issue.mjs";
 
 const HEADER = "# autopilot run — task: GitHub issue #42: CSV export drops unicode";
 
-// The seven prefixes nextStage resumes on, plus the park marker.
+// The eight prefixes nextStage resumes on, plus the park marker.
 const RESUME_PREFIXES = [
-  "pr:", "rebase clean", "sdd complete", "plan complete",
+  "pr:", "rebase clean", "learnings committed", "sdd complete", "plan complete",
   "spec committed", "worktree:", "design approved", "PARKED",
 ];
 
-// autopilot's own eight entries, in pipeline order, with the stage nextStage
+// autopilot's own nine entries, in pipeline order, with the stage nextStage
 // must return once the ledger ends there.
 const STAGE_ENTRIES = [
   ["started (phase 1)", "phase1"],
@@ -37,7 +37,8 @@ const STAGE_ENTRIES = [
   ["worktree: .claude/worktrees/issue-42 (branch worktree-issue-42)", "spec"],
   ["spec committed → docs/superpowers/specs/2026-08-21-x-design.md", "plan"],
   ["plan complete → docs/superpowers/plans/2026-08-21-x.md (6 tasks)", "sdd"],
-  ["sdd complete (6 tasks, 0 parked, 0 fix rounds across 0 tasks)", "land"],
+  ["sdd complete (6 tasks, 0 parked, 0 fix rounds across 0 tasks)", "learnings"],
+  ["learnings committed → docs/autopilot/learnings.md", "land"],
   ["rebase clean, tests green (42 passed)", "pr"],
   ["pr: https://example.com/pull/23", "done"],
 ];
@@ -104,9 +105,10 @@ describe("the PARKED ordering constraint", () => {
 
   it("does NOT return parked when the github line lands after it", () => {
     // This is the failure the ordering rule exists to prevent: the run reads as
-    // resumable and /autopilot resume drives it into `land` on a red branch.
+    // resumable and /autopilot resume drives it into `learnings` on a red
+    // branch.
     const stage = stageOf([...throughSdd, REASON, "github: parked comment posted"]);
     expect(stage).not.toBe("parked");
-    expect(stage).toBe("land");
+    expect(stage).toBe("learnings");
   });
 });

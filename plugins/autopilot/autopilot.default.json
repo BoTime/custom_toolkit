@@ -3,6 +3,7 @@
     "brainstorm":        { "model": "opus",   "effort": "high" },
     "spec":              { "model": "opus",   "effort": "high" },
     "plan":              { "model": "opus",   "effort": "high" },
+    "learnings":         { "model": "opus",   "effort": "high" },
     "implement":         { "model": "sonnet", "effort": "medium" },
     "implement_complex": { "model": "opus",   "effort": "high" },
     "task_review":       { "model": "sonnet", "effort": "medium" },
