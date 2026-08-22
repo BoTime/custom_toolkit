@@ -44,12 +44,12 @@ difference: this skill's base directory is `<plugin root>/skills/autopilot-githu
 so the plugin root is that path with `/skills/autopilot-github` removed.
 
 `$CLAUDE_PLUGIN_ROOT` is **not** set in Bash tool calls. Resolve the path once
-and substitute the literal value into every `"$AP/..."` command below — you
+and substitute the literal value into every `"$AP"/...` command below — you
 write each command fresh, and shell variables do not persist between Bash calls.
 
 ```bash
 AP="<the base directory, minus /skills/autopilot-github>"
-ls "$AP/scripts/autopilot-github-issue.mjs"   # must exist; if not, stop
+ls "$AP"/scripts/autopilot-github-issue.mjs   # must exist; if not, stop
 ```
 
 Run every command below from the **repository root**, so the relative
@@ -80,6 +80,19 @@ those key names and **stop** — do not start the brainstorm. The fix is a
 }
 ```
 
+On success, `preflight` prints the three resolved status names alongside `ok`:
+
+```
+ok — status names: ready="Ready", in_progress="In Progress", in_review="In Review"
+```
+
+**Those printed strings — not the defaults shown in the JSON example above — are
+what you substitute for `<status_ready>` / `<status_in_progress>` /
+`<status_in_review>` in Delta 3.** They are the merged values: the plugin's
+defaults, overridden per key by anything the project sets. Read them off this
+line rather than assuming the defaults, or a project that renames one status
+gets a `move` that fails on an option name its board does not have.
+
 The four status keys have defaults in the plugin's `autopilot.default.json` and
 merge per key, so a project usually needs only `project_owner` and
 `project_number`. Those two have no default: they are irreducibly
@@ -94,8 +107,12 @@ and stepped past — see "Transition failures do not park".
 unchanged:
 
 ```bash
-node "$AP"/scripts/autopilot-github-issue.mjs resolve --issue <n>
+node "$AP"/scripts/autopilot-github-issue.mjs resolve --issue <n> --write-ledger .superpowers/autopilot
 ```
+
+This one call does two things: it prints the JSON object below, **and** it
+creates `.superpowers/autopilot/<run>/run.md` with its header line already
+appended — before `started (phase 1)` is appended to it.
 
 It prints one JSON object:
 
@@ -118,17 +135,10 @@ It prints one JSON object:
 
 ### Ledger header
 
-Create the run directory and the ledger before appending `started (phase 1)`.
-The header uses the **single-line** form — the first line of `task`, never the
-whole string:
-
-```bash
-mkdir -p .superpowers/autopilot/<run>
-printf '# autopilot run — task: GitHub issue #%s: %s\n' "<n>" "<title>" \
-  >> .superpowers/autopilot/<run>/run.md
-```
-
-giving:
+`--write-ledger` above is what creates the run directory and the ledger, so by
+the time you append `started (phase 1)` the file already exists and already
+holds its header — the **single-line** form, the first line of `task` and never
+the whole string:
 
 ```
 # autopilot run — task: GitHub issue #42: CSV export drops unicode
@@ -137,6 +147,15 @@ giving:
 `autopilot-ledger.mjs`'s header regex is single-line. Writing the multi-line
 `task` into `run.md` would strand the body as untimestamped lines that
 `parseLedger` silently drops.
+
+**Never build this header line yourself from the JSON's `title` field.** Not
+with `printf`, not with `echo`, not with any shell command — and do not write it
+by hand from the printed JSON either. An issue title is untrusted, third-party
+text: it can contain quote characters that break the command's quoting, or shell
+metacharacters like `$(...)` and backticks that execute in your human partner's
+checkout. The script writes the file itself, in code, for exactly this reason —
+the title never becomes part of a shell string. `--write-ledger` is the only
+supported way this header reaches `run.md`.
 
 ## Delta 2 — run naming
 
@@ -177,7 +196,9 @@ the body into the run directory first, the way the `pr` stage already writes
 `pr-body.md`, rather than shell-quoting it.
 
 `<option>` is a status name from config: `status_ready`, `status_in_progress`,
-or `status_in_review`.
+or `status_in_review`. Take the exact strings from the status-names line Delta
+0's `preflight` printed — those are the merged values, and they are the only
+source that is right when the project overrides one.
 
 ### Ledger entries and idempotency
 
@@ -267,8 +288,11 @@ The one hard stop is Delta 0's preflight, which runs before anything else.
 
 ## Resume
 
-`/autopilot-github resume <run>` recovers the issue number from the run name's
-`issue-<n>-` prefix, so the hooks still know which issue to act on. Then follow
+`/autopilot-github resume <run>` recovers the issue number from the run name:
+the digits between `issue-` and the next `-` or the end of the string. Both
+`issue-42-csv-export-drops-unicode` and the bare `issue-42` fallback — the run
+name a title that normalizes to an empty slug produces — parse to `42`. With the
+number in hand the hooks still know which issue to act on. Then follow
 autopilot's own resume path: read `.superpowers/autopilot/<run>/run.md`, call
 `nextStage`, jump to that stage. Each hook's idempotency check decides whether
 it has work left to do.
@@ -283,12 +307,17 @@ Out of scope, deliberately: creating issues, closing issues, reading issue
 comments back into the run, reacting to board moves made by humans, and any
 board field other than the single-select Status field.
 
+It also does not vet the issue. The issue's title and body flow verbatim into
+the brainstorm and, from there, into an unattended pipeline that writes code,
+commits, and opens a pull request — only point this skill at issues you trust.
+
 ## Common Rationalizations
 
 | Excuse | Reality |
 |---|---|
 | "I'll dispatch autopilot as a subagent and hook the transitions around it" | The hooks interleave with autopilot's stages and share its ledger. Behind a subagent boundary they are unreachable, and a park reports to you instead of to your human partner. |
 | "I know the slug rules — I'll derive the run name myself on resume" | The slug is the ledger directory's key. A second derivation that differs by one character orphans the run. Take it from `resolve` or from the run name. |
+| "I'll just `printf` the header line myself, it's one command" | The issue title is untrusted text. A quote breaks the command's quoting and `$(...)` or a backtick executes in your human partner's checkout. `resolve --write-ledger` writes the file from code, where the title is only ever string content. |
 | "The full issue body belongs in the ledger header" | The header regex is single-line. The body becomes untimestamped lines that `parseLedger` drops. The body goes to the brainstorm, not to `run.md`. |
 | "I'll post the park comment after appending PARKED, it reads better" | Then `PARKED` is no longer the last entry, `nextStage` stops returning `parked`, and the next `/autopilot resume` drives the run past its park. |
 | "The card move failed — I should park and ask" | A stale card is a reporting defect. Append `github: move failed — <reason>` and continue; the branch and the PR are the run's product. |

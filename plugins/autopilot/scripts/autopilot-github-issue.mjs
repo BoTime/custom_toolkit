@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { loadConfig, validateGithubConfig } from "./autopilot-config.mjs";
 
@@ -60,6 +60,34 @@ export function runName(number, title) {
  */
 export function ledgerTask({ number, title }) {
   return `GitHub issue #${number}: ${String(title ?? "").replace(/\s+/g, " ").trim()}`;
+}
+
+/**
+ * The ledger header line written to a fresh run.md: `ledgerTask` wrapped in
+ * the `# autopilot run — task: ` prefix `autopilot-ledger.mjs`'s HEADER regex
+ * expects, terminated by one trailing newline.
+ */
+export function ledgerHeaderLine(issue) {
+  return `# autopilot run — task: ${ledgerTask(issue)}\n`;
+}
+
+/**
+ * Create the run directory (if needed) and append the ledger header —
+ * never a shell command built from the issue's title. This is the only path
+ * an issue's untrusted title takes on its way into `run.md`, so it never
+ * touches a shell string. `mkdir`/`appendFile` are injected so tests need no
+ * real filesystem.
+ */
+export function writeLedgerHeader(
+  runDir,
+  issue,
+  {
+    mkdir = (d) => mkdirSync(d, { recursive: true }),
+    appendFile = (p, s) => appendFileSync(p, s),
+  } = {},
+) {
+  mkdir(runDir);
+  appendFile(`${runDir}/run.md`, ledgerHeaderLine(issue));
 }
 
 /**
@@ -303,7 +331,8 @@ export function parseArgs(argv) {
 
 const USAGE =
   "usage: autopilot-github-issue.mjs <preflight|resolve|move|comment> " +
-  '[--issue <n>] [--to "<status>"] [--body <text>|--body-file <path>]';
+  '[--issue <n>] [--write-ledger <base-dir>] [--to "<status>"] ' +
+  "[--body <text>|--body-file <path>]";
 
 function ghRun(args) {
   const r = spawnSync("gh", args, { encoding: "utf8" });
@@ -315,21 +344,44 @@ function requireIssue(args) {
   return args.issue;
 }
 
-export function main(argv = process.argv.slice(2), gh = ghRun, load = loadConfig) {
+export function main(
+  argv = process.argv.slice(2),
+  gh = ghRun,
+  load = loadConfig,
+  fsOps = {},
+) {
   const [command] = argv;
   const args = parseArgs(argv.slice(1));
   const configPath = args.config ?? ".claude/autopilot.json";
 
   try {
     if (command === "preflight") {
-      const result = preflightGithub(load(configPath).config);
-      console.log(result.message);
+      const { config } = load(configPath);
+      const result = preflightGithub(config);
+      if (result.ok) {
+        // The wrapper's prose needs the *merged* status names to build its
+        // `move --to` calls; the defaults in the skill's example JSON are wrong
+        // whenever a project overrides one.
+        const g = config.github;
+        console.log(
+          `${result.message} — status names: ready="${g.status_ready}", ` +
+            `in_progress="${g.status_in_progress}", in_review="${g.status_in_review}"`,
+        );
+      } else {
+        console.log(result.message);
+      }
       process.exitCode = result.ok ? 0 : 1;
       return;
     }
 
     if (command === "resolve") {
-      console.log(JSON.stringify(resolveIssue(requireIssue(args), gh), null, 2));
+      const resolved = resolveIssue(requireIssue(args), gh);
+      // --write-ledger keeps the untrusted title out of any shell command: the
+      // header goes to disk from here, never from prose-built `printf`.
+      if (args["write-ledger"]) {
+        writeLedgerHeader(`${args["write-ledger"]}/${resolved.run}`, resolved, fsOps);
+      }
+      console.log(JSON.stringify(resolved, null, 2));
       return;
     }
 

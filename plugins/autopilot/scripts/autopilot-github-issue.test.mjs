@@ -15,6 +15,8 @@ import {
   slugify,
   runName,
   ledgerTask,
+  ledgerHeaderLine,
+  writeLedgerHeader,
   taskDescription,
   resolveIssue,
   preflightGithub,
@@ -149,6 +151,57 @@ describe("ledgerTask and taskDescription", () => {
   });
 });
 
+/** Records mkdir/appendFile calls, so no test needs a real filesystem. */
+function fakeFs() {
+  const mkdirs = [];
+  const appends = [];
+  return {
+    mkdirs,
+    appends,
+    ops: {
+      mkdir: (d) => mkdirs.push(d),
+      appendFile: (p, s) => appends.push([p, s]),
+    },
+  };
+}
+
+describe("ledgerHeaderLine and writeLedgerHeader", () => {
+  it("builds the single-line, newline-terminated header autopilot-ledger expects", () => {
+    expect(ledgerHeaderLine(ISSUE)).toBe(
+      "# autopilot run — task: GitHub issue #42: CSV export drops unicode\n",
+    );
+  });
+
+  it("creates the run directory and appends the header to run.md", () => {
+    const fs = fakeFs();
+    writeLedgerHeader(".superpowers/autopilot/issue-42-csv-export-drops-unicode", ISSUE, fs.ops);
+    expect(fs.mkdirs).toEqual([".superpowers/autopilot/issue-42-csv-export-drops-unicode"]);
+    expect(fs.appends).toEqual([
+      [
+        ".superpowers/autopilot/issue-42-csv-export-drops-unicode/run.md",
+        "# autopilot run — task: GitHub issue #42: CSV export drops unicode\n",
+      ],
+    ]);
+  });
+
+  it("writes a title full of shell metacharacters through verbatim, unexecuted", () => {
+    // The issue title is third-party text. The earlier design had the wrapper's
+    // prose build this line with `printf` in a Bash call, where a quote breaks
+    // the quoting and `$(...)` or a backtick is command execution in the user's
+    // checkout. The header is written from code, so the title is only ever
+    // string content — never a shell token.
+    const hostile = 'Fix "quotes" and $(rm -rf /) and `backticks`';
+    const fs = fakeFs();
+    writeLedgerHeader("/runs/issue-9", { number: 9, title: hostile }, fs.ops);
+    const [path, contents] = fs.appends[0];
+    expect(path).toBe("/runs/issue-9/run.md");
+    expect(contents).toBe(`# autopilot run — task: GitHub issue #9: ${hostile}\n`);
+    expect(contents).toContain('"quotes"');
+    expect(contents).toContain("$(rm -rf /)");
+    expect(contents).toContain("`backticks`");
+  });
+});
+
 describe("resolveIssue", () => {
   it("wraps gh issue view and returns number, title, url, run, and task", () => {
     const gh = fakeGh(() => ok(JSON.stringify(ISSUE)));
@@ -227,11 +280,63 @@ describe("main — resolve and preflight", () => {
     });
   });
 
+  it("resolve --write-ledger also writes the run's ledger header", () => {
+    const out = capture();
+    const fs = fakeFs();
+    const gh = fakeGh(() => ok(JSON.stringify(ISSUE)));
+    main(
+      ["resolve", "--issue", "42", "--write-ledger", ".superpowers/autopilot"],
+      gh,
+      () => ({ config: CONFIG }),
+      fs.ops,
+    );
+    expect(process.exitCode).toBe(0);
+    expect(fs.mkdirs).toEqual([".superpowers/autopilot/issue-42-csv-export-drops-unicode"]);
+    expect(fs.appends).toEqual([
+      [
+        ".superpowers/autopilot/issue-42-csv-export-drops-unicode/run.md",
+        "# autopilot run — task: GitHub issue #42: CSV export drops unicode\n",
+      ],
+    ]);
+    // The JSON object is still printed — --write-ledger adds a side effect, it
+    // does not replace the output the wrapper reads.
+    expect(JSON.parse(out.join("\n")).run).toBe("issue-42-csv-export-drops-unicode");
+  });
+
+  it("resolve without --write-ledger touches the filesystem not at all", () => {
+    const out = capture();
+    const fs = fakeFs();
+    const gh = fakeGh(() => ok(JSON.stringify(ISSUE)));
+    main(["resolve", "--issue", "42"], gh, () => ({ config: CONFIG }), fs.ops);
+    expect(process.exitCode).toBe(0);
+    expect(fs.mkdirs).toEqual([]);
+    expect(fs.appends).toEqual([]);
+    expect(JSON.parse(out.join("\n")).number).toBe(42);
+  });
+
   it("preflight prints ok and exits 0 for a complete config", () => {
     const out = capture();
     main(["preflight"], fakeGh(() => ok()), () => ({ config: CONFIG }));
     expect(process.exitCode).toBe(0);
     expect(out.join("\n")).toContain("ok");
+  });
+
+  it("preflight prints the merged status names the wrapper needs for move --to", () => {
+    // The wrapper cannot read the merged config itself, and the defaults shown
+    // in SKILL.md's example JSON are wrong whenever a project overrides one.
+    const out = capture();
+    main(
+      ["preflight"],
+      fakeGh(() => ok()),
+      () => ({
+        config: { github: { ...CONFIG.github, status_in_progress: "Doing" } },
+      }),
+    );
+    expect(process.exitCode).toBe(0);
+    const printed = out.join("\n");
+    expect(printed).toContain('ready="Ready"');
+    expect(printed).toContain('in_progress="Doing"');
+    expect(printed).toContain('in_review="In Review"');
   });
 
   it("preflight exits non-zero naming the missing keys", () => {

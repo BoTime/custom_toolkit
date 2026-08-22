@@ -89,6 +89,19 @@ describe("the load-bearing rules", () => {
     expect(flat).toMatch(/skip/i);
   });
 
+  it("has resolve write the ledger header rather than a shell printf", () => {
+    // The issue title is untrusted text. Prose that builds this line with
+    // printf hands a title containing `$(...)` or a backtick straight to a
+    // shell in the user's checkout.
+    expect(skill).toContain("--write-ledger");
+  });
+
+  it("points the wrapper at preflight's printed status names", () => {
+    // Without them the wrapper can only guess from the defaults in the example
+    // JSON, which are wrong whenever the project overrides one.
+    expect(flat).toMatch(/status names/i);
+  });
+
   it("names all four subcommands of the script", () => {
     for (const subcommand of ["preflight", "resolve", "move", "comment"]) {
       expect(skill).toContain(`autopilot-github-issue.mjs ${subcommand}`);
