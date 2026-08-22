@@ -104,6 +104,187 @@ export function preflightGithub(config) {
       };
 }
 
+function ghJson(result, what) {
+  if (result.code !== 0) {
+    throw new Error(`${what} failed: ${result.stderr.trim() || result.stdout.trim()}`);
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${what} returned output that is not JSON: ${result.stdout.slice(0, 200)}`);
+  }
+}
+
+/**
+ * Match an entry from `gh issue view --json projectItems` to the configured
+ * board, returning its item id.
+ *
+ * gh's projectItems payload has varied across versions, so this reads the
+ * project under either `project` or `projectV2` and returns null for any shape
+ * it does not recognize — resolveItemId then falls back to `item-list`, which
+ * has a stable `content.number`. The owner is compared only when the payload
+ * carries one: an item that names no owner is not evidence of a different one.
+ */
+export function matchProjectItem(projectItems, github) {
+  for (const item of projectItems ?? []) {
+    if (!item?.id) continue;
+    const project = item.project ?? item.projectV2;
+    if (!project) continue;
+    if (Number(project.number) !== Number(github.project_number)) continue;
+    const owner = project.owner?.login ?? project.owner;
+    if (
+      owner &&
+      String(owner).toLowerCase() !== String(github.project_owner).toLowerCase()
+    ) {
+      continue;
+    }
+    return item.id;
+  }
+  return null;
+}
+
+/** Match an item from `gh project item-list --format json` by its issue number. */
+export function matchItemList(itemListJson, issueNumber) {
+  for (const item of itemListJson?.items ?? []) {
+    if (Number(item?.content?.number) === Number(issueNumber)) return item.id;
+  }
+  return null;
+}
+
+/**
+ * The issue's project item id. The issue-scoped call is one request, so it is
+ * tried first; `item-list` is the fallback. An issue on no matching board is a
+ * named error, never a silent no-op.
+ */
+export function resolveItemId(issueNumber, config, gh) {
+  const github = config.github;
+
+  const view = gh(["issue", "view", String(issueNumber), "--json", "projectItems"]);
+  if (view.code === 0) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(view.stdout);
+    } catch {
+      parsed = null;
+    }
+    const id = matchProjectItem(parsed?.projectItems, github);
+    if (id) return id;
+  }
+
+  const list = ghJson(
+    gh([
+      "project", "item-list", String(github.project_number),
+      "--owner", github.project_owner, "--format", "json",
+    ]),
+    `gh project item-list for ${github.project_owner}/${github.project_number}`,
+  );
+  const id = matchItemList(list, issueNumber);
+  if (!id) {
+    throw new Error(
+      `issue #${issueNumber} is not an item on project ${github.project_owner}/${github.project_number} — ` +
+        `add the issue to that board, or fix project_owner/project_number in .claude/autopilot.json`,
+    );
+  }
+  return id;
+}
+
+/** `gh project item-edit` needs the project's node id, which item-list omits. */
+export function resolveProjectId(config, gh) {
+  const github = config.github;
+  const project = ghJson(
+    gh([
+      "project", "view", String(github.project_number),
+      "--owner", github.project_owner, "--format", "json",
+    ]),
+    `gh project view for ${github.project_owner}/${github.project_number}`,
+  );
+  if (!project.id) {
+    throw new Error(
+      `gh project view returned no project id for ${github.project_owner}/${github.project_number}`,
+    );
+  }
+  return project.id;
+}
+
+/** The configured single-select field, or an error listing what the board has. */
+export function findStatusField(fieldListJson, fieldName) {
+  const fields = fieldListJson?.fields ?? [];
+  const field = fields.find((f) => f?.name === fieldName);
+  if (!field) {
+    const names = fields.map((f) => f?.name).filter(Boolean).join(", ");
+    throw new Error(
+      `no field named "${fieldName}" on the project — fields present: ${names || "(none)"}`,
+    );
+  }
+  if (!Array.isArray(field.options)) {
+    throw new Error(`field "${fieldName}" is not a single-select field — it has no options`);
+  }
+  return field;
+}
+
+/** The named option, or an error listing the options the field actually has. */
+export function findStatusOption(field, optionName) {
+  const option = field.options.find((o) => o?.name === optionName);
+  if (!option) {
+    const names = field.options.map((o) => o?.name).filter(Boolean).join(", ");
+    throw new Error(
+      `no option named "${optionName}" on field "${field.name}" — options present: ${names || "(none)"}`,
+    );
+  }
+  return option;
+}
+
+/** Set the issue's Projects v2 Status field to the named option. */
+export function move(issueNumber, statusName, config, gh) {
+  const github = config.github;
+  const itemId = resolveItemId(issueNumber, config, gh);
+  const projectId = resolveProjectId(config, gh);
+  const fields = ghJson(
+    gh([
+      "project", "field-list", String(github.project_number),
+      "--owner", github.project_owner, "--format", "json",
+    ]),
+    `gh project field-list for ${github.project_owner}/${github.project_number}`,
+  );
+  const field = findStatusField(fields, github.status_field);
+  const option = findStatusOption(field, statusName);
+
+  const edit = gh([
+    "project", "item-edit",
+    "--id", itemId,
+    "--project-id", projectId,
+    "--field-id", field.id,
+    "--single-select-option-id", option.id,
+  ]);
+  if (edit.code !== 0) {
+    throw new Error(
+      `gh project item-edit failed for issue #${issueNumber} → "${statusName}": ` +
+        `${edit.stderr.trim() || edit.stdout.trim()}`,
+    );
+  }
+  return { itemId, projectId, fieldId: field.id, optionId: option.id, status: statusName };
+}
+
+/** Post an issue comment from inline text or a file. */
+export function comment(
+  issueNumber,
+  { body, bodyFile },
+  gh,
+  readFile = (p) => readFileSync(p, "utf8"),
+) {
+  const text = bodyFile !== undefined ? readFile(bodyFile) : body;
+  if (text === undefined || text === null || String(text).trim() === "") {
+    throw new Error("comment needs a non-empty --body <text> or --body-file <path>");
+  }
+  const result = gh(["issue", "comment", String(issueNumber), "--body", String(text)]);
+  if (result.code !== 0) {
+    throw new Error(
+      `gh issue comment failed for #${issueNumber}: ${result.stderr.trim() || result.stdout.trim()}`,
+    );
+  }
+  return result.stdout.trim();
+}
+
 /** Minimal `--flag value` / `--flag=value` parsing; positionals land in `_`. */
 export function parseArgs(argv) {
   const out = { _: [] };
@@ -149,6 +330,28 @@ export function main(argv = process.argv.slice(2), gh = ghRun, load = loadConfig
 
     if (command === "resolve") {
       console.log(JSON.stringify(resolveIssue(requireIssue(args), gh), null, 2));
+      return;
+    }
+
+    if (command === "move") {
+      const issue = requireIssue(args);
+      if (!args.to) throw new Error('move needs --to "<status option>"');
+      const { config } = load(configPath);
+      const check = preflightGithub(config);
+      if (!check.ok) throw new Error(check.message);
+      const result = move(issue, args.to, config, gh);
+      console.log(`moved issue #${issue} to ${result.status}`);
+      return;
+    }
+
+    if (command === "comment") {
+      const issue = requireIssue(args);
+      const posted = comment(
+        issue,
+        { body: args.body, bodyFile: args["body-file"] },
+        gh,
+      );
+      console.log(posted || `commented on issue #${issue}`);
       return;
     }
 

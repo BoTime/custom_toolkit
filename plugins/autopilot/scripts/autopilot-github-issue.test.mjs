@@ -18,6 +18,14 @@ import {
   taskDescription,
   resolveIssue,
   preflightGithub,
+  matchProjectItem,
+  matchItemList,
+  resolveItemId,
+  resolveProjectId,
+  findStatusField,
+  findStatusOption,
+  move,
+  comment,
   main,
 } from "./autopilot-github-issue.mjs";
 
@@ -239,5 +247,276 @@ describe("main — resolve and preflight", () => {
     main(["frobnicate"], fakeGh(() => ok()), () => ({ config: CONFIG }));
     expect(process.exitCode).toBe(1);
     expect(out.join("\n")).toMatch(/usage:/);
+  });
+});
+
+// The Projects v2 side. Two resolution steps have to be right for a move to be
+// possible at all — which board item corresponds to this issue, and which
+// single-select option corresponds to this status name — and each has a named
+// failure mode rather than a silent no-op.
+
+const PROJECT_ITEMS_MATCH = {
+  projectItems: [
+    { id: "PVTI_other", project: { number: 3, owner: { login: "BoTime" } } },
+    { id: "PVTI_right", project: { number: 7, owner: { login: "BoTime" } } },
+  ],
+};
+
+const FIELD_LIST = {
+  fields: [
+    { id: "PVTF_title", name: "Title", type: "ProjectV2Field" },
+    {
+      id: "PVTSSF_status",
+      name: "Status",
+      type: "ProjectV2SingleSelectField",
+      options: [
+        { id: "opt_ready", name: "Ready" },
+        { id: "opt_progress", name: "In Progress" },
+        { id: "opt_review", name: "In Review" },
+      ],
+    },
+  ],
+};
+
+/** Routes a fake gh by subcommand pair, so each test describes only what it needs. */
+function ghRouter(routes) {
+  return fakeGh((args) => {
+    const key = args[0] === "project" ? `project ${args[1]}` : `${args[0]} ${args[1]}`;
+    const handler = routes[key];
+    if (!handler) throw new Error(`unexpected gh call: ${args.join(" ")}`);
+    return typeof handler === "function" ? handler(args) : handler;
+  });
+}
+
+describe("matchProjectItem", () => {
+  it("returns the item id when the project number and owner both match", () => {
+    expect(matchProjectItem(PROJECT_ITEMS_MATCH.projectItems, CONFIG.github))
+      .toBe("PVTI_right");
+  });
+
+  it("skips an entry for a different project number", () => {
+    const items = [{ id: "PVTI_x", project: { number: 3, owner: { login: "BoTime" } } }];
+    expect(matchProjectItem(items, CONFIG.github)).toBeNull();
+  });
+
+  it("skips an entry whose owner differs", () => {
+    const items = [{ id: "PVTI_x", project: { number: 7, owner: { login: "SomeoneElse" } } }];
+    expect(matchProjectItem(items, CONFIG.github)).toBeNull();
+  });
+
+  it("accepts an entry that names no owner — a number match is enough", () => {
+    // An item that carries no owner is not evidence of a DIFFERENT owner.
+    const items = [{ id: "PVTI_x", projectV2: { number: 7 } }];
+    expect(matchProjectItem(items, CONFIG.github)).toBe("PVTI_x");
+  });
+
+  it("returns null for a shape it does not recognize, so the fallback runs", () => {
+    // gh's projectItems payload has varied across versions. An unrecognized
+    // shape must fall through to item-list rather than guess.
+    expect(matchProjectItem([{ id: "PVTI_x", title: "some board" }], CONFIG.github))
+      .toBeNull();
+  });
+
+  it("returns null for a missing or empty list", () => {
+    expect(matchProjectItem(undefined, CONFIG.github)).toBeNull();
+    expect(matchProjectItem([], CONFIG.github)).toBeNull();
+  });
+});
+
+describe("matchItemList", () => {
+  it("returns the id of the item whose content number matches the issue", () => {
+    const list = {
+      items: [
+        { id: "PVTI_a", content: { type: "Issue", number: 41 } },
+        { id: "PVTI_b", content: { type: "Issue", number: 42 } },
+      ],
+    };
+    expect(matchItemList(list, 42)).toBe("PVTI_b");
+  });
+
+  it("returns null when no item matches", () => {
+    expect(matchItemList({ items: [] }, 42)).toBeNull();
+  });
+});
+
+describe("resolveItemId", () => {
+  it("uses the issue-scoped projectItems match and never calls item-list", () => {
+    const gh = ghRouter({
+      "issue view": ok(JSON.stringify(PROJECT_ITEMS_MATCH)),
+    });
+    expect(resolveItemId(42, CONFIG, gh)).toBe("PVTI_right");
+    expect(gh.calls).toHaveLength(1);
+    expect(gh.calls[0]).toEqual(["issue", "view", "42", "--json", "projectItems"]);
+  });
+
+  it("falls back to item-list when projectItems yields nothing usable", () => {
+    const gh = ghRouter({
+      "issue view": ok(JSON.stringify({ projectItems: [] })),
+      "project item-list": ok(
+        JSON.stringify({ items: [{ id: "PVTI_b", content: { number: 42 } }] }),
+      ),
+    });
+    expect(resolveItemId(42, CONFIG, gh)).toBe("PVTI_b");
+    expect(gh.calls[1]).toEqual([
+      "project", "item-list", "7", "--owner", "BoTime", "--format", "json",
+    ]);
+  });
+
+  it("errors naming the issue and the configured owner and number when neither path matches", () => {
+    const gh = ghRouter({
+      "issue view": ok(JSON.stringify({ projectItems: [] })),
+      "project item-list": ok(JSON.stringify({ items: [] })),
+    });
+    expect(() => resolveItemId(42, CONFIG, gh)).toThrow(/#42/);
+    expect(() => resolveItemId(42, CONFIG, gh)).toThrow(/BoTime\/7/);
+  });
+});
+
+describe("resolveProjectId", () => {
+  it("reads the project node id from gh project view", () => {
+    const gh = ghRouter({ "project view": ok(JSON.stringify({ id: "PVT_kw", number: 7 })) });
+    expect(resolveProjectId(CONFIG, gh)).toBe("PVT_kw");
+    expect(gh.calls[0]).toEqual([
+      "project", "view", "7", "--owner", "BoTime", "--format", "json",
+    ]);
+  });
+});
+
+describe("findStatusField and findStatusOption", () => {
+  it("finds the configured single-select field by name", () => {
+    expect(findStatusField(FIELD_LIST, "Status").id).toBe("PVTSSF_status");
+  });
+
+  it("errors listing the field names the project actually has", () => {
+    expect(() => findStatusField(FIELD_LIST, "State")).toThrow(/Title, Status/);
+  });
+
+  it("finds the option named by the target status", () => {
+    expect(findStatusOption(findStatusField(FIELD_LIST, "Status"), "In Review").id)
+      .toBe("opt_review");
+  });
+
+  it("errors listing the options the field actually has", () => {
+    const field = findStatusField(FIELD_LIST, "Status");
+    expect(() => findStatusOption(field, "Done")).toThrow(
+      /Ready, In Progress, In Review/,
+    );
+  });
+});
+
+describe("move", () => {
+  const routes = {
+    "issue view": ok(JSON.stringify(PROJECT_ITEMS_MATCH)),
+    "project view": ok(JSON.stringify({ id: "PVT_kw" })),
+    "project field-list": ok(JSON.stringify(FIELD_LIST)),
+    "project item-edit": ok("edited"),
+  };
+
+  it("builds the expected gh project item-edit argument list", () => {
+    const gh = ghRouter(routes);
+    const result = move(42, "In Progress", CONFIG, gh);
+    expect(gh.calls.at(-1)).toEqual([
+      "project", "item-edit",
+      "--id", "PVTI_right",
+      "--project-id", "PVT_kw",
+      "--field-id", "PVTSSF_status",
+      "--single-select-option-id", "opt_progress",
+    ]);
+    expect(result.status).toBe("In Progress");
+  });
+
+  it("surfaces a non-zero item-edit exit as an error, never a silent success", () => {
+    const gh = ghRouter({ ...routes, "project item-edit": fail("HTTP 403") });
+    expect(() => move(42, "In Progress", CONFIG, gh)).toThrow(/403/);
+  });
+});
+
+describe("comment", () => {
+  it("posts the --body text", () => {
+    const gh = ghRouter({ "issue comment": ok("https://example.com/issues/42#c1") });
+    comment(42, { body: "run started" }, gh);
+    expect(gh.calls[0]).toEqual(["issue", "comment", "42", "--body", "run started"]);
+  });
+
+  it("reads --body-file and posts its contents", () => {
+    // Park reasons and PR announcements are multi-line; the pr stage already
+    // establishes writing such a body to a file rather than shell-quoting it.
+    const gh = ghRouter({ "issue comment": ok("") });
+    comment(42, { bodyFile: "/run/comment.md" }, gh, () => "line one\nline two");
+    expect(gh.calls[0][4]).toBe("line one\nline two");
+  });
+
+  it("errors when neither --body nor --body-file is supplied", () => {
+    const gh = ghRouter({ "issue comment": ok("") });
+    expect(() => comment(42, {}, gh)).toThrow(/--body/);
+    expect(gh.calls).toHaveLength(0);
+  });
+
+  it("surfaces a non-zero gh exit", () => {
+    const gh = ghRouter({ "issue comment": fail("HTTP 404") });
+    expect(() => comment(42, { body: "x" }, gh)).toThrow(/404/);
+  });
+});
+
+describe("main — move and comment", () => {
+  beforeEach(() => {
+    process.exitCode = 0;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.exitCode = 0;
+  });
+
+  const capture = () => {
+    const out = [];
+    vi.spyOn(console, "log").mockImplementation((m) => out.push(String(m)));
+    vi.spyOn(console, "error").mockImplementation((m) => out.push(String(m)));
+    return out;
+  };
+
+  it("move prints a confirmation and exits 0", () => {
+    const out = capture();
+    const gh = ghRouter({
+      "issue view": ok(JSON.stringify(PROJECT_ITEMS_MATCH)),
+      "project view": ok(JSON.stringify({ id: "PVT_kw" })),
+      "project field-list": ok(JSON.stringify(FIELD_LIST)),
+      "project item-edit": ok("edited"),
+    });
+    main(["move", "--issue", "42", "--to", "In Review"], gh, () => ({ config: CONFIG }));
+    expect(process.exitCode).toBe(0);
+    expect(out.join("\n")).toContain("In Review");
+  });
+
+  it("move exits non-zero naming the missing keys when the github block is incomplete", () => {
+    // The wrapper's preflight and the script fail on the same check.
+    const out = capture();
+    main(
+      ["move", "--issue", "42", "--to", "In Review"],
+      ghRouter({}),
+      () => ({ config: { github: { project_owner: "BoTime" } } }),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(out.join("\n")).toContain("project_number");
+  });
+
+  it("comment posts the body and exits 0", () => {
+    const out = capture();
+    const gh = ghRouter({ "issue comment": ok("posted") });
+    main(
+      ["comment", "--issue", "42", "--body", "run started"],
+      gh,
+      () => ({ config: CONFIG }),
+    );
+    expect(process.exitCode).toBe(0);
+    expect(out.join("\n")).toContain("posted");
+  });
+
+  it("a failing gh call exits non-zero with the message", () => {
+    const out = capture();
+    const gh = ghRouter({ "issue comment": fail("HTTP 404") });
+    main(["comment", "--issue", "42", "--body", "x"], gh, () => ({ config: CONFIG }));
+    expect(process.exitCode).toBe(1);
+    expect(out.join("\n")).toContain("404");
   });
 });
