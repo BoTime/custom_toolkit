@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 export const ROLES = [
-  "brainstorm", "spec", "plan", "implement", "implement_complex",
+  "brainstorm", "spec", "plan", "learnings", "implement", "implement_complex",
   "task_review", "re_review", "final_review", "fix_escalation",
 ];
 

@@ -12,6 +12,7 @@ const validConfig = () => ({
     brainstorm: { model: "opus", effort: "high" },
     spec: { model: "opus", effort: "high" },
     plan: { model: "opus", effort: "xhigh" },
+    learnings: { model: "opus", effort: "high" },
     implement: { model: "sonnet", effort: "medium" },
     implement_complex: { model: "opus", effort: "high" },
     task_review: { model: "opus", effort: "high" },
@@ -27,9 +28,9 @@ const validConfig = () => ({
 });
 
 describe("ROLES and EFFORTS", () => {
-  it("lists exactly the nine roles", () => {
+  it("lists exactly the ten roles", () => {
     expect(ROLES).toEqual([
-      "brainstorm", "spec", "plan", "implement", "implement_complex",
+      "brainstorm", "spec", "plan", "learnings", "implement", "implement_complex",
       "task_review", "re_review", "final_review", "fix_escalation",
     ]);
   });
@@ -52,6 +53,14 @@ describe("validateConfig", () => {
     const result = validateConfig(cfg, {});
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("roles.final_review: missing");
+  });
+
+  it("rejects a missing learnings role", () => {
+    const cfg = validConfig();
+    delete cfg.roles.learnings;
+    const result = validateConfig(cfg, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("roles.learnings: missing");
   });
 
   it("rejects a role missing its model", () => {
@@ -164,7 +173,7 @@ describe("mergeConfig", () => {
     expect(merged.worktree_dir).toBe(".claude/worktrees");
   });
 
-  it("overrides one role and preserves the other eight", () => {
+  it("overrides one role and preserves the other nine", () => {
     const merged = mergeConfig(validConfig(), {
       roles: { implement: { model: "opus" } },
     });
@@ -172,7 +181,7 @@ describe("mergeConfig", () => {
     // effort survives a partial role override
     expect(merged.roles.implement.effort).toBe("medium");
     expect(merged.roles.plan).toEqual({ model: "opus", effort: "xhigh" });
-    expect(Object.keys(merged.roles)).toHaveLength(9);
+    expect(Object.keys(merged.roles)).toHaveLength(10);
   });
 
   it("does not mutate the defaults", () => {
@@ -396,5 +405,9 @@ describe("shipped autopilot.default.json", () => {
     // fails confusingly instead of failing at preflight with the key's name.
     expect(defaults.github.project_owner).toBeUndefined();
     expect(defaults.github.project_number).toBeUndefined();
+  });
+
+  it("ships the learnings role", () => {
+    expect(defaults.roles.learnings).toEqual({ model: "opus", effort: "high" });
   });
 });
