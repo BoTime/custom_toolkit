@@ -24,13 +24,19 @@ plan, implementation, landing, and PR.
 ```
 /autopilot <task description>
 /autopilot resume <branch>
+/autopilot-github <issue-number-or-URL>
+/autopilot-github resume <run>
 ```
 
-Provides two skills — `autopilot` (the orchestrator) and
-`autopilot-brainstorm` (Phase 1, a fork of `superpowers:brainstorming` that
-hands its design back in conversation rather than writing a spec file, and
-drops the design-approval gate so Phase 2 starts as soon as the questions are
-answered).
+Provides three skills — `autopilot` (the orchestrator), `autopilot-brainstorm`
+(Phase 1, a fork of `superpowers:brainstorming` that hands its design back in
+conversation rather than writing a spec file, and drops the design-approval gate
+so Phase 2 starts as soon as the questions are answered), and `autopilot-github`
+(a thin wrapper that resolves a GitHub issue into the task description and run
+name, then drives `autopilot` unchanged while moving the issue's Projects v2
+card Ready → In Progress → In Review and commenting on the issue at each
+transition). `autopilot-github` needs the `github` config block below; plain
+`/autopilot` ignores it entirely.
 
 **Requires** the `superpowers` plugin: autopilot's preflight checks for
 `writing-plans`, `subagent-driven-development`, `requesting-code-review`,
@@ -68,6 +74,27 @@ warns and the `land` stage parks rather than reporting green.
 | `worktree_dir` | `.claude/worktrees` | Where run worktrees are created |
 | `reaper` | `true` | Prune merged worktrees at `setup` |
 | `roles` | see defaults | Per-role `model` and `effort` for the nine dispatch roles |
+| `github` | four status names | Projects v2 wiring for `/autopilot-github` only. Ignored by plain `/autopilot`. |
+
+`/autopilot-github` additionally needs the two keys that cannot be guessed. The
+four status names merge per key from the defaults, so this is usually the whole
+block:
+
+```json
+{
+  "test_command": "npm test",
+  "github": {
+    "project_owner": "BoTime",
+    "project_number": 7
+  }
+}
+```
+
+`status_field` (`Status`), `status_ready` (`Ready`), `status_in_progress`
+(`In Progress`), and `status_in_review` (`In Review`) default to those values and
+only need overriding if your board names them differently. A missing
+`project_owner` or `project_number` stops `/autopilot-github` at preflight,
+naming the key — it never guesses.
 
 `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
 effort level.
@@ -76,7 +103,7 @@ effort level.
 
 ```bash
 npm install
-npm test                                    # vitest, 85 tests
+npm test                                    # vitest, 268 tests
 claude plugin validate ./plugins/autopilot  # manifest check
 claude --plugin-dir ./plugins/autopilot     # load locally for one session
 ```
