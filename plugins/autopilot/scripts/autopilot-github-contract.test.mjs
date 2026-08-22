@@ -59,6 +59,22 @@ describe("the wrapper stays a wrapper", () => {
   });
 });
 
+describe("the learnings stage rides the wrapped pipeline", () => {
+  it("restates learnings in the pipeline list", () => {
+    expect(flat).toMatch(/sdd → learnings → land/);
+  });
+
+  it("restates the learnings committed prefix in the seams rule", () => {
+    // The wrapper lists the prefixes nextStage matches so its `github: ` lines
+    // never collide with them; `learnings committed` is now one of those.
+    expect(skill).toContain("learnings committed");
+  });
+
+  it("says the learnings stage runs automatically in both entry points", () => {
+    expect(flat).toMatch(/summarize automatically/i);
+  });
+});
+
 describe("the five github: ledger lines", () => {
   GITHUB_LEDGER_LINES.forEach((line) => {
     it(`documents "${line}"`, () => {
