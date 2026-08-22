@@ -17,8 +17,8 @@ If invoked as `/autopilot resume <branch>`, read
 `.superpowers/autopilot/<branch>/run.md`, call `nextStage` on it, and jump to
 that stage. Do not redo completed stages. Then follow the pipeline from there.
 
-`nextStage` returns one of nine values: the seven stages — `phase1`, `setup`,
-`spec`, `plan`, `sdd`, `land`, `pr` — plus `done` and `parked`.
+`nextStage` returns one of ten values: the eight stages — `phase1`, `setup`,
+`spec`, `plan`, `sdd`, `learnings`, `land`, `pr` — plus `done` and `parked`.
 
 - A stage name — jump to that stage and follow the pipeline from there.
 - `done` — the run reached its PR. Report the URL from the ledger and stop.
@@ -278,6 +278,14 @@ Rule 3 is load-bearing: a bare instruction to emit fewer tasks produces
 oversized tasks whose diffs defeat task review, which converts a wall-clock
 saving into fix rounds that cost more than the tasks saved.
 
+The dispatch prompt also carries a learnings instruction. The plan agent is the
+one consumer of the run's accumulated learnings; every other stage is
+deliberately learnings-free. Include text equivalent to:
+
+> Read `docs/autopilot/learnings.md` if present and apply its planning rules to
+> this plan. If the file is absent — an early run, or a repo that has never
+> produced learnings — plan without it. No error, no parking.
+
 Append: `plan complete → <path> (<n> tasks)`.
 
 ### `sdd`
@@ -404,9 +412,44 @@ Append: `sdd complete (<n> tasks, <k> parked, <f> fix rounds across <t> tasks)`
 Count a fix round every time a task returns to its implementer after a review
 finding; `<t>` is how many distinct tasks needed at least one. Keep the
 `sdd complete (` prefix exactly — `nextStage` matches it to resume the run at
-`land`. Without the fix-round clause, a run where every task needed three
+`learnings`. Without the fix-round clause, a run where every task needed three
 rounds renders identically to one where all passed first try, so a struggling
 run is invisible at a glance.
+
+### `learnings`
+
+Dispatch the `learnings` role to rewrite `docs/autopilot/learnings.md` inside
+the worktree and commit it. This is the one artifact the pipeline both writes
+and reads: `sdd` captures review findings, the learnings role distills them
+into planning rules, and the next run's `plan` stage reads the doc.
+
+The dispatch prompt instructs the role to:
+
+1. Read this run's findings at `.superpowers/autopilot/<run>/findings.jsonl`
+   in the **main checkout** — via Bash, not Write/Edit, because a
+   worktree-isolated session cannot write the main checkout but Bash reads
+   work.
+2. Read the accumulated corpus across `.superpowers/autopilot/*/findings.jsonl`
+   the same way.
+3. Read the existing `docs/autopilot/learnings.md` on the branch, if present.
+4. Rewrite the doc — **condensed and bounded, not endlessly appended** — keeping
+   two sections: **"Planning rules"** (actionable prose rules for the plan
+   stage, with `stage_at_fault == "plan"` findings prioritized) and **"Recent
+   runs"** (compact summaries, trimmed to the most recent runs).
+5. Write the rewritten doc **inside the worktree** at
+   `docs/autopilot/learnings.md`.
+6. Commit it to the branch.
+
+If no `docs/autopilot/learnings.md` exists on the branch yet, seed it from the
+accumulated corpus rather than starting empty — the first rewritten doc should
+already carry distilled rules.
+
+A `learnings`-stage failure does not park. Log it and continue: append
+`learnings failed — <reason>` and proceed to `land`. Only a successful commit
+appends `learnings committed → docs/autopilot/learnings.md`, which is what
+`nextStage` matches to treat this stage as done.
+
+Append: `learnings committed → docs/autopilot/learnings.md`.
 
 ### `land`
 
