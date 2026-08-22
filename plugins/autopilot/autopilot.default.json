@@ -13,5 +13,11 @@
   "worktree_dir": ".claude/worktrees",
   "base_ref": "origin/main",
   "reaper": true,
-  "findings_threshold": 2
+  "findings_threshold": 2,
+  "github": {
+    "status_field": "Status",
+    "status_ready": "Ready",
+    "status_in_progress": "In Progress",
+    "status_in_review": "In Review"
+  }
 }
