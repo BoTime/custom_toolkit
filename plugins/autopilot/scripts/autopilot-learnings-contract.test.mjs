@@ -93,6 +93,17 @@ describe("plan dispatch prompt reads the learnings doc", () => {
   });
 });
 
+describe("the sdd section resumes sdd completion into learnings", () => {
+  const sddText = unwrap(stageSection(skill, "sdd"));
+
+  it("redirects sdd completion to the learnings stage", () => {
+    // Load-bearing redirect: `nextStage` resumes a run ending in `sdd complete`
+    // at `learnings`, not `land`. Without this guard, an edit reverting the
+    // prose to `land` would pass every other test.
+    expect(sddText).toMatch(/resume the run at `learnings`/i);
+  });
+});
+
 describe("the resume section lists the learnings stage", () => {
   const whole = unwrap(skill);
 
