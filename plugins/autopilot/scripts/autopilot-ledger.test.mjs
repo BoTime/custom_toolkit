@@ -16,6 +16,7 @@ const LEDGER = `# autopilot run — task: add a CSV export button
 2026-07-29T14:33:10Z  spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md
 2026-07-29T14:39:20Z  plan complete → docs/superpowers/plans/2026-07-29-csv-export.md
 2026-07-29T16:14:55Z  sdd complete (6 tasks, 0 parked)
+2026-07-29T16:16:10Z  learnings committed → docs/autopilot/learnings.md
 2026-07-29T16:18:32Z  rebase clean, tests green (42 passed)
 2026-07-29T16:19:40Z  pr: https://example.com/pull/23
 `;
@@ -35,11 +36,12 @@ describe("parseLedger", () => {
 
   it("parses every timestamped entry", () => {
     const { entries } = parseLedger(LEDGER);
-    expect(entries).toHaveLength(8);
+    expect(entries).toHaveLength(9);
     expect(entries[0]).toEqual({
       timestamp: "2026-07-29T14:02:11Z", text: "started (phase 1)",
     });
-    expect(entries[7].text).toBe("pr: https://example.com/pull/23");
+    expect(entries[6].text).toBe("learnings committed → docs/autopilot/learnings.md");
+    expect(entries[8].text).toBe("pr: https://example.com/pull/23");
   });
 
   it("ignores blank lines", () => {
@@ -58,13 +60,21 @@ describe("nextStage", () => {
   });
 
   it("returns pr when landing finished but no PR exists", () => {
-    const partial = LEDGER.split("\n").slice(0, 8).join("\n");
+    const partial = LEDGER.split("\n").slice(0, 9).join("\n");
     expect(nextStage(parseLedger(partial))).toBe("pr");
   });
 
-  it("returns land when sdd finished", () => {
-    const partial = LEDGER.split("\n").slice(0, 7).join("\n");
+  it("returns land when learnings is committed", () => {
+    // The ordering constraint: this ledger contains BOTH `sdd complete` and
+    // `learnings committed`, but `learnings committed` is checked first, so the
+    // later stage wins.
+    const partial = LEDGER.split("\n").slice(0, 8).join("\n");
     expect(nextStage(parseLedger(partial))).toBe("land");
+  });
+
+  it("returns learnings when sdd finished", () => {
+    const partial = LEDGER.split("\n").slice(0, 7).join("\n");
+    expect(nextStage(parseLedger(partial))).toBe("learnings");
   });
 
   it("returns sdd when the plan exists", () => {
@@ -90,6 +100,21 @@ describe("nextStage", () => {
   it("returns phase1 for a ledger with only a start line", () => {
     const partial = LEDGER.split("\n").slice(0, 2).join("\n");
     expect(nextStage(parseLedger(partial))).toBe("phase1");
+  });
+
+  it("returns learnings when the learnings stage failed", () => {
+    // `learnings failed — <reason>` does not start with `learnings committed`,
+    // so nextStage treats the stage as incomplete and retries it on resume.
+    const failed = `# autopilot run — task: add a CSV export button
+2026-07-29T14:02:11Z  started (phase 1)
+2026-07-29T14:31:48Z  design approved
+2026-07-29T14:32:03Z  worktree: .claude/worktrees/csv-export (branch csv-export)
+2026-07-29T14:33:10Z  spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md
+2026-07-29T14:39:20Z  plan complete → docs/superpowers/plans/2026-07-29-csv-export.md
+2026-07-29T16:14:55Z  sdd complete (6 tasks, 0 parked)
+2026-07-29T16:16:10Z  learnings failed — disk full
+`;
+    expect(nextStage(parseLedger(failed))).toBe("learnings");
   });
 
   it("returns parked when the last entry is a PARKED line", () => {
@@ -124,7 +149,7 @@ describe("nextStage", () => {
 describe("durations", () => {
   it("computes seconds between consecutive entries", () => {
     const d = durations(parseLedger(LEDGER));
-    expect(d).toHaveLength(7);
+    expect(d).toHaveLength(8);
     expect(d[0]).toEqual({
       from: "started (phase 1)", to: "design approved", seconds: 1777,
     });
@@ -195,7 +220,8 @@ Total run duration: **2h 17m** (excludes preflight — the ledger starts at \`st
 | spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md | 1m |
 | plan complete → docs/superpowers/plans/2026-07-29-csv-export.md | 6m |
 | sdd complete (6 tasks, 0 parked) | 1h 35m |
-| rebase clean, tests green (42 passed) | 3m |
+| learnings committed → docs/autopilot/learnings.md | 1m |
+| rebase clean, tests green (42 passed) | 2m |
 | pr: https://example.com/pull/23 | 1m |`);
   });
 
