@@ -7,6 +7,30 @@ export const ROLES = [
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
+/**
+ * The `github` keys the autopilot-github wrapper needs, in report order.
+ *
+ * Deliberately NOT part of `TOP_LEVEL` below: that list is a hard error on
+ * absence, so listing `github` there would break every plain `/autopilot` run
+ * in a project that has no board. The wrapper's preflight and the board-
+ * touching subcommands of autopilot-github-issue.mjs call the validator below
+ * instead, so both fail on exactly the same check.
+ */
+export const GITHUB_KEYS = [
+  "project_owner", "project_number", "status_field",
+  "status_ready", "status_in_progress", "status_in_review",
+];
+
+/** Names the `github` keys no config layer supplied. Empty means complete. */
+export function validateGithubConfig(config) {
+  const github = config?.github;
+  if (!github || typeof github !== "object") return [...GITHUB_KEYS];
+  return GITHUB_KEYS.filter((key) => {
+    const value = github[key];
+    return value === undefined || value === null || value === "";
+  });
+}
+
 const TOP_LEVEL = ["worktree_dir", "base_ref", "reaper", "findings_threshold"];
 
 /**
@@ -25,6 +49,14 @@ export function mergeConfig(defaults, project) {
     for (const [role, entry] of Object.entries(project.roles ?? {})) {
       merged.roles[role] = { ...merged.roles[role], ...entry };
     }
+  }
+
+  // Same per-key treatment as `roles`, and for the same reason: the top-level
+  // merge is shallow, so a project supplying only `project_owner` and
+  // `project_number` would replace the block wholesale and lose all four
+  // default status names.
+  if (defaults.github || project.github) {
+    merged.github = { ...defaults.github, ...(project.github ?? {}) };
   }
 
   return merged;
