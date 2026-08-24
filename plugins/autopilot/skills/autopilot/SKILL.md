@@ -18,7 +18,7 @@ If invoked as `/autopilot resume <branch>`, read
 that stage. Do not redo completed stages. Then follow the pipeline from there.
 
 `nextStage` returns one of eleven values: the nine stages — `phase1`, `setup`,
-`spec`, `plan`, `sdd`, `learnings`, `land`, `verify`, `pr` — plus `done` and
+`spec`, `plan`, `sdd`, `verify`, `learnings`, `land`, `pr` — plus `done` and
 `parked`.
 
 - A stage name — jump to that stage and follow the pipeline from there.
@@ -448,78 +448,27 @@ Append: `sdd complete (<n> tasks, <k> parked, <f> fix rounds across <t> tasks)`
 Count a fix round every time a task returns to its implementer after a review
 finding; `<t>` is how many distinct tasks needed at least one. Keep the
 `sdd complete (` prefix exactly — `nextStage` matches it to resume the run at
-`learnings`. Without the fix-round clause, a run where every task needed three
+`verify`. Without the fix-round clause, a run where every task needed three
 rounds renders identically to one where all passed first try, so a struggling
 run is invisible at a glance.
 
-### `learnings`
-
-Dispatch the `learnings` role to rewrite `docs/autopilot/learnings.md` inside
-the worktree and commit it. This is the one artifact the pipeline both writes
-and reads: `sdd` captures review findings, the learnings role distills them
-into planning rules, and the next run's `plan` stage reads the doc.
-
-The dispatch prompt instructs the role to:
-
-1. Read this run's findings at `.superpowers/autopilot/<run>/findings.jsonl`
-   in the **main checkout** — via Bash, not Write/Edit, because a
-   worktree-isolated session cannot write the main checkout but Bash reads
-   work.
-2. Read the accumulated corpus across `.superpowers/autopilot/*/findings.jsonl`
-   the same way.
-3. Read the existing `docs/autopilot/learnings.md` on the branch, if present.
-4. Rewrite the doc — **condensed and bounded, not endlessly appended** — keeping
-   two sections: **"Planning rules"** (actionable prose rules for the plan
-   stage, with `stage_at_fault == "plan"` findings prioritized) and **"Recent
-   runs"** (compact summaries, trimmed to the most recent runs).
-5. Write the rewritten doc **inside the worktree** at
-   `docs/autopilot/learnings.md`.
-6. Commit it to the branch.
-
-If no `docs/autopilot/learnings.md` exists on the branch yet, seed it from the
-accumulated corpus rather than starting empty — the first rewritten doc should
-already carry distilled rules.
-
-A `learnings`-stage failure does not park. Log it and continue: append
-`learnings failed — <reason>` and proceed to `land`. Only a successful commit
-appends `learnings committed → docs/autopilot/learnings.md`, which is what
-`nextStage` matches to treat this stage as done.
-
-Append: `learnings committed → docs/autopilot/learnings.md`.
-
-### `land`
-
-Run `node "$AP/scripts/autopilot-land.mjs" <base_ref>` from the
-repository root.
-
-**If `test_command` is not set, park immediately** — before rebasing. Without
-it there is no way to tell a landed branch from a broken one, and the whole
-point of this stage is that check. Append
-`PARKED — test_command not set in .claude/autopilot.json`. Never treat an
-absent test command as a pass.
-
-- `clean` — run `test_command`. Green, append
-  `rebase clean, tests green (<n> passed)` and continue. Red, park.
-- `conflict` — dispatch the `implement` role to resolve. It resolves only what
-  it can reason about confidently: both sides independent, one side a clear
-  superset, import-list merges. Anything where both sides changed the same
-  logic, it parks. Then re-run the land script to confirm clean, then run
-  `test_command`. Only green continues.
-- `error` — park.
-
-The test run after the rebase is not optional. Semantic conflicts rebase
-cleanly and still break the branch: task A renames a function, task B adds a
-caller of the old name in a file A never touched, git reports nothing, and the
-branch is broken. The suite is the only thing that catches this.
-
 ### `verify`
 
-Browser-verify the spec's UI acceptance criteria against the landed branch.
+Browser-verify the spec's UI acceptance criteria against the branch `sdd` just
+finished writing.
 
-This stage runs **after** `land`, on the rebased branch, for the same reason
-the test run does: a semantic conflict rebases clean and still breaks the UI.
-It runs **before** `pr`, so a broken feature never reaches a reviewer with a
-green PR description.
+This stage runs **after** `sdd` and **before** `learnings`, on the pre-rebase
+tree. That placement is a deliberate trade. The previous design verified the
+landed branch, because a semantic conflict can rebase clean and still break the
+UI — and that risk is real: the post-rebase `test_command` run inside `land`
+remains the only gate after landing, and it sees no pixels.
+
+What the trade buys is worth more. A failed criterion found here is a fix on
+the working branch, in the same run, against a tree nobody has rebased and
+while the implementation context is still fresh. And `learnings` now runs
+*after* `verify`, so it can distil what the browser saw — the strongest
+evidence a run produces about whether the spec described the feature correctly,
+which previously arrived too late to be distilled at all.
 
 #### Whether to run at all
 
@@ -534,14 +483,14 @@ spec has no `## Acceptance criteria` section or an item is untagged. Then:
 
 | Condition | Action |
 |---|---|
-| `ui` count is 0 | Append `verify: skipped (no ui criteria)` and go to `pr` |
-| `browser` unconfigured in `.claude/autopilot.json` | Append `verify: skipped (browser not configured)` and go to `pr` |
+| `ui` count is 0 | Append `verify: skipped (no ui criteria)` and go to `learnings` |
+| `browser` unconfigured in `.claude/autopilot.json` | Append `verify: skipped (browser not configured)` and go to `learnings` |
 | `browser` half-configured | **Park** — `PARKED — browser config incomplete: <keys>` |
 | The criteria command exits non-zero | **Park** — the spec cannot state what done means |
 
-The skip lines are not optional bookkeeping. `nextStage` resumes at `pr` by
-matching an entry starting `verify`, so a stage that skips silently sends every
-later resume back through `verify` forever.
+The skip lines are not optional bookkeeping. `nextStage` resumes at `learnings`
+by matching an entry starting `verify`, so a stage that skips silently sends
+every later resume back through `verify` forever.
 
 An unconfigured project skipping is correct — most repositories have no
 frontend. A *half*-configured one parking is equally deliberate: it means
@@ -654,6 +603,66 @@ ambiguous or untestable as written. Invent no new value; the learnings analyzer
 clusters on the four it knows.
 
 Append: `verify: <n>/<n> ui criteria passed`.
+
+### `learnings`
+
+Dispatch the `learnings` role to rewrite `docs/autopilot/learnings.md` inside
+the worktree and commit it. This is the one artifact the pipeline both writes
+and reads: `sdd` captures review findings, the learnings role distills them
+into planning rules, and the next run's `plan` stage reads the doc.
+
+The dispatch prompt instructs the role to:
+
+1. Read this run's findings at `.superpowers/autopilot/<run>/findings.jsonl`
+   in the **main checkout** — via Bash, not Write/Edit, because a
+   worktree-isolated session cannot write the main checkout but Bash reads
+   work.
+2. Read the accumulated corpus across `.superpowers/autopilot/*/findings.jsonl`
+   the same way.
+3. Read the existing `docs/autopilot/learnings.md` on the branch, if present.
+4. Rewrite the doc — **condensed and bounded, not endlessly appended** — keeping
+   two sections: **"Planning rules"** (actionable prose rules for the plan
+   stage, with `stage_at_fault == "plan"` findings prioritized) and **"Recent
+   runs"** (compact summaries, trimmed to the most recent runs).
+5. Write the rewritten doc **inside the worktree** at
+   `docs/autopilot/learnings.md`.
+6. Commit it to the branch.
+
+If no `docs/autopilot/learnings.md` exists on the branch yet, seed it from the
+accumulated corpus rather than starting empty — the first rewritten doc should
+already carry distilled rules.
+
+A `learnings`-stage failure does not park. Log it and continue: append
+`learnings failed — <reason>` and proceed to `land`. Only a successful commit
+appends `learnings committed → docs/autopilot/learnings.md`, which is what
+`nextStage` matches to treat this stage as done.
+
+Append: `learnings committed → docs/autopilot/learnings.md`.
+
+### `land`
+
+Run `node "$AP/scripts/autopilot-land.mjs" <base_ref>` from the
+repository root.
+
+**If `test_command` is not set, park immediately** — before rebasing. Without
+it there is no way to tell a landed branch from a broken one, and the whole
+point of this stage is that check. Append
+`PARKED — test_command not set in .claude/autopilot.json`. Never treat an
+absent test command as a pass.
+
+- `clean` — run `test_command`. Green, append
+  `rebase clean, tests green (<n> passed)` and continue. Red, park.
+- `conflict` — dispatch the `implement` role to resolve. It resolves only what
+  it can reason about confidently: both sides independent, one side a clear
+  superset, import-list merges. Anything where both sides changed the same
+  logic, it parks. Then re-run the land script to confirm clean, then run
+  `test_command`. Only green continues.
+- `error` — park.
+
+The test run after the rebase is not optional. Semantic conflicts rebase
+cleanly and still break the branch: task A renames a function, task B adds a
+caller of the old name in a file A never touched, git reports nothing, and the
+branch is broken. The suite is the only thing that catches this.
 
 ### `pr`
 

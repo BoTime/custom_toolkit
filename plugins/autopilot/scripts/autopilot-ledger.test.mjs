@@ -16,6 +16,7 @@ const LEDGER = `# autopilot run — task: add a CSV export button
 2026-07-29T14:33:10Z  spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md
 2026-07-29T14:39:20Z  plan complete → docs/superpowers/plans/2026-07-29-csv-export.md
 2026-07-29T16:14:55Z  sdd complete (6 tasks, 0 parked)
+2026-07-29T16:15:02Z  verify: 3/3 ui criteria passed
 2026-07-29T16:16:10Z  learnings committed → docs/autopilot/learnings.md
 2026-07-29T16:18:32Z  rebase clean, tests green (42 passed)
 2026-07-29T16:19:40Z  pr: https://example.com/pull/23
@@ -36,12 +37,12 @@ describe("parseLedger", () => {
 
   it("parses every timestamped entry", () => {
     const { entries } = parseLedger(LEDGER);
-    expect(entries).toHaveLength(9);
+    expect(entries).toHaveLength(10);
     expect(entries[0]).toEqual({
       timestamp: "2026-07-29T14:02:11Z", text: "started (phase 1)",
     });
-    expect(entries[6].text).toBe("learnings committed → docs/autopilot/learnings.md");
-    expect(entries[8].text).toBe("pr: https://example.com/pull/23");
+    expect(entries[7].text).toBe("learnings committed → docs/autopilot/learnings.md");
+    expect(entries[9].text).toBe("pr: https://example.com/pull/23");
   });
 
   it("ignores blank lines", () => {
@@ -59,41 +60,42 @@ describe("nextStage", () => {
     expect(nextStage(parseLedger(LEDGER))).toBe("done");
   });
 
-  it("returns verify when landing finished but nothing was verified", () => {
-    const partial = LEDGER.split("\n").slice(0, 9).join("\n");
-    expect(nextStage(parseLedger(partial))).toBe("verify");
-  });
-
-  it("returns pr once verify has reported", () => {
-    const landed = LEDGER.split("\n").slice(0, 9).join("\n");
-    const verified = `${landed}\n2026-07-29T16:19:02Z  verify: 3/3 ui criteria passed`;
-    expect(nextStage(parseLedger(verified))).toBe("pr");
-  });
-
-  // The skip lines are the reason `nextStage` matches the bare `verify`
-  // prefix rather than a passing-run phrase. A run that skips the stage and
-  // appends nothing would resolve to `verify` forever.
-  it("returns pr when verify skipped rather than passed", () => {
-    const landed = LEDGER.split("\n").slice(0, 9).join("\n");
-    for (const skip of [
-      "verify: skipped (no ui criteria)",
-      "verify: skipped (browser not configured)",
-    ]) {
-      expect(nextStage(parseLedger(`${landed}\n2026-07-29T16:19:02Z  ${skip}`))).toBe("pr");
-    }
+  it("returns pr once the branch has landed", () => {
+    const partial = LEDGER.split("\n").slice(0, 10).join("\n");
+    expect(nextStage(parseLedger(partial))).toBe("pr");
   });
 
   it("returns land when learnings is committed", () => {
     // The ordering constraint: this ledger contains BOTH `sdd complete` and
     // `learnings committed`, but `learnings committed` is checked first, so the
     // later stage wins.
-    const partial = LEDGER.split("\n").slice(0, 8).join("\n");
+    const partial = LEDGER.split("\n").slice(0, 9).join("\n");
     expect(nextStage(parseLedger(partial))).toBe("land");
   });
 
-  it("returns learnings when sdd finished", () => {
+  it("returns learnings once verify has reported", () => {
     const partial = LEDGER.split("\n").slice(0, 7).join("\n");
-    expect(nextStage(parseLedger(partial))).toBe("learnings");
+    const verified = `${partial}\n2026-07-29T16:15:02Z  verify: 3/3 ui criteria passed`;
+    expect(nextStage(parseLedger(verified))).toBe("learnings");
+  });
+
+  // The skip lines are the reason `nextStage` matches the bare `verify`
+  // prefix rather than a pass-specific one: a skipped stage that appends
+  // nothing would resolve to `verify` forever.
+  it("returns learnings when verify skipped rather than passed", () => {
+    const partial = LEDGER.split("\n").slice(0, 7).join("\n");
+    for (const line of [
+      "verify: skipped (no ui criteria)",
+      "verify: skipped (browser not configured)",
+    ]) {
+      const skipped = `${partial}\n2026-07-29T16:15:02Z  ${line}`;
+      expect(nextStage(parseLedger(skipped))).toBe("learnings");
+    }
+  });
+
+  it("returns verify when sdd finished but nothing was verified", () => {
+    const partial = LEDGER.split("\n").slice(0, 7).join("\n"); // through "sdd complete"
+    expect(nextStage(parseLedger(partial))).toBe("verify");
   });
 
   it("returns sdd when the plan exists", () => {
@@ -131,6 +133,7 @@ describe("nextStage", () => {
 2026-07-29T14:33:10Z  spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md
 2026-07-29T14:39:20Z  plan complete → docs/superpowers/plans/2026-07-29-csv-export.md
 2026-07-29T16:14:55Z  sdd complete (6 tasks, 0 parked)
+2026-07-29T16:15:02Z  verify: 3/3 ui criteria passed
 2026-07-29T16:16:10Z  learnings failed — disk full
 `;
     expect(nextStage(parseLedger(failed))).toBe("learnings");
@@ -168,7 +171,7 @@ describe("nextStage", () => {
 describe("durations", () => {
   it("computes seconds between consecutive entries", () => {
     const d = durations(parseLedger(LEDGER));
-    expect(d).toHaveLength(8);
+    expect(d).toHaveLength(9);
     expect(d[0]).toEqual({
       from: "started (phase 1)", to: "design approved", seconds: 1777,
     });
@@ -239,6 +242,7 @@ Total run duration: **2h 17m** (excludes preflight — the ledger starts at \`st
 | spec committed → docs/superpowers/specs/2026-07-29-csv-export-design.md | 1m |
 | plan complete → docs/superpowers/plans/2026-07-29-csv-export.md | 6m |
 | sdd complete (6 tasks, 0 parked) | 1h 35m |
+| verify: 3/3 ui criteria passed | 7s |
 | learnings committed → docs/autopilot/learnings.md | 1m |
 | rebase clean, tests green (42 passed) | 2m |
 | pr: https://example.com/pull/23 | 1m |`);

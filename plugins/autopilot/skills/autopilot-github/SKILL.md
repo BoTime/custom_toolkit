@@ -19,9 +19,10 @@ from brainstorm to PR."
 ## This is a wrapper, not a copy
 
 The run itself is `autopilot:autopilot`, unchanged. Brainstorm → setup → spec →
-plan → sdd → learnings → land → pr, the ledger format, stage idempotency, the
-SDD dispatch contracts, and all five parking conditions all come from that
-skill. Read it and follow it. Everything in this file is a delta layered on top.
+plan → sdd → verify → learnings → land → pr, the ledger format, stage
+idempotency, the SDD dispatch contracts, and all five parking conditions all
+come from that skill. Read it and follow it. Everything in this file is a delta
+layered on top.
 
 The `learnings` stage runs within this wrapped pipeline unchanged — both plain
 `/autopilot` and `/autopilot-github` summarize automatically: the run's review
@@ -36,7 +37,7 @@ Two structural rules make that work.
    would be reported to you instead of to your human partner.
 2. **Never touch autopilot's pattern-matched seams.** `nextStage` resumes a run
    by prefix-matching ledger text — `pr:`, `rebase clean`, `learnings committed`,
-   `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
+   `verify`, `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
    `design approved` — and
    detects a park by `PARKED` at the start of the ledger's **last** entry. Every
    line this wrapper appends is prefixed `github: `, which collides with none of

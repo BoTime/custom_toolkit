@@ -23,10 +23,10 @@ import { GITHUB_LEDGER_LINES } from "./autopilot-github-issue.mjs";
 
 const HEADER = "# autopilot run — task: GitHub issue #42: CSV export drops unicode";
 
-// The eight prefixes nextStage resumes on, plus the park marker.
+// The nine prefixes nextStage resumes on, plus the park marker.
 const RESUME_PREFIXES = [
-  "pr:", "rebase clean", "learnings committed", "sdd complete", "plan complete",
-  "spec committed", "worktree:", "design approved", "PARKED",
+  "pr:", "rebase clean", "learnings committed", "verify", "sdd complete",
+  "plan complete", "spec committed", "worktree:", "design approved", "PARKED",
 ];
 
 // autopilot's own nine entries, in pipeline order, with the stage nextStage
@@ -37,10 +37,10 @@ const STAGE_ENTRIES = [
   ["worktree: .claude/worktrees/issue-42 (branch worktree-issue-42)", "spec"],
   ["spec committed → docs/superpowers/specs/2026-08-21-x-design.md", "plan"],
   ["plan complete → docs/superpowers/plans/2026-08-21-x.md (6 tasks)", "sdd"],
-  ["sdd complete (6 tasks, 0 parked, 0 fix rounds across 0 tasks)", "learnings"],
+  ["sdd complete (6 tasks, 0 parked, 0 fix rounds across 0 tasks)", "verify"],
+  ["verify: 3/3 ui criteria passed", "learnings"],
   ["learnings committed → docs/autopilot/learnings.md", "land"],
-  ["rebase clean, tests green (42 passed)", "verify"],
-  ["verify: 3/3 ui criteria passed", "pr"],
+  ["rebase clean, tests green (42 passed)", "pr"],
   ["pr: https://example.com/pull/23", "done"],
 ];
 
@@ -106,10 +106,9 @@ describe("the PARKED ordering constraint", () => {
 
   it("does NOT return parked when the github line lands after it", () => {
     // This is the failure the ordering rule exists to prevent: the run reads as
-    // resumable and /autopilot resume drives it into `learnings` on a red
-    // branch.
+    // resumable and /autopilot resume drives it into `verify` on a red branch.
     const stage = stageOf([...throughSdd, REASON, "github: parked comment posted"]);
     expect(stage).not.toBe("parked");
-    expect(stage).toBe("learnings");
+    expect(stage).toBe("verify");
   });
 });

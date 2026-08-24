@@ -61,15 +61,23 @@ const verify = unwrap(section(skill, "verify"));
 const whole = unwrap(skill);
 
 describe("verify stage placement", () => {
-  it("runs after land and before pr", () => {
-    const order = ["### `land`", "### `verify`", "### `pr`"].map((h) => skill.indexOf(h));
+  it("runs after sdd and before learnings", () => {
+    const order = ["### `sdd`", "### `verify`", "### `learnings`", "### `land`", "### `pr`"]
+      .map((h) => skill.indexOf(h));
     expect(order.every((i) => i > 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("says why it runs on the landed branch rather than before the rebase", () => {
-    expect(verify).toMatch(/after\*{0,2} `?land/i);
-    expect(verify).toMatch(/semantic conflict|rebases clean/i);
+  // The previous design verified the rebased branch. Moving earlier trades
+  // that away deliberately; the section must name the trade rather than
+  // quietly dropping the old rationale.
+  it("names what moving it before land costs", () => {
+    expect(verify).toMatch(/pre-rebase|before `?land/i);
+    expect(verify).toMatch(/rebase/i);
+  });
+
+  it("says learnings runs after it so the browser evidence is distillable", () => {
+    expect(verify).toMatch(/learnings/i);
   });
 });
 
@@ -204,12 +212,10 @@ describe("SKILL.md <-> nextStage coupling for verify", () => {
       "2026-08-24T10:03:00Z  spec committed → docs/x.md",
       "2026-08-24T10:04:00Z  plan complete → docs/y.md",
       "2026-08-24T10:05:00Z  sdd complete (3 tasks, 0 parked)",
-      "2026-08-24T10:06:00Z  learnings committed → docs/autopilot/learnings.md",
-      "2026-08-24T10:07:00Z  rebase clean, tests green (12 passed)",
-      ...(entry ? [`2026-08-24T10:08:00Z  ${entry}`] : []),
+      ...(entry ? [`2026-08-24T10:06:00Z  ${entry}`] : []),
     ].join("\n");
 
-  it("resumes at verify once the branch has landed", () => {
+  it("resumes at verify once sdd has finished", () => {
     expect(nextStage(parseLedger(upTo(null)))).toBe("verify");
   });
 
@@ -218,9 +224,8 @@ describe("SKILL.md <-> nextStage coupling for verify", () => {
   it.each([
     "verify: 3/3 ui criteria passed",
     "verify: skipped (no ui criteria)",
-    "verify: skipped (browser not configured)",
-  ])('"%s" advances the run to pr', (entry) => {
-    expect(nextStage(parseLedger(upTo(entry)))).toBe("pr");
+  ])('"%s" advances the run to learnings', (entry) => {
+    expect(nextStage(parseLedger(upTo(entry)))).toBe("learnings");
   });
 
   it("parks on the verify park lines", () => {
@@ -230,7 +235,7 @@ describe("SKILL.md <-> nextStage coupling for verify", () => {
   it("lists verify among the stages the resume section documents", () => {
     expect(whole).toMatch(/one of eleven values/i);
     expect(whole).toMatch(/the nine stages/i);
-    expect(whole).toMatch(/`land`, `verify`, `pr`/);
+    expect(whole).toMatch(/`sdd`, `verify`, `learnings`/);
   });
 });
 
