@@ -17,8 +17,9 @@ If invoked as `/autopilot resume <branch>`, read
 `.superpowers/autopilot/<branch>/run.md`, call `nextStage` on it, and jump to
 that stage. Do not redo completed stages. Then follow the pipeline from there.
 
-`nextStage` returns one of ten values: the eight stages — `phase1`, `setup`,
-`spec`, `plan`, `sdd`, `learnings`, `land`, `pr` — plus `done` and `parked`.
+`nextStage` returns one of eleven values: the nine stages — `phase1`, `setup`,
+`spec`, `plan`, `sdd`, `learnings`, `land`, `verify`, `pr` — plus `done` and
+`parked`.
 
 - A stage name — jump to that stage and follow the pipeline from there.
 - `done` — the run reached its PR. Report the URL from the ledger and stop.
@@ -30,7 +31,7 @@ that stage. Do not redo completed stages. Then follow the pipeline from there.
 
 ## Locating the plugin's scripts
 
-This skill ships four Node helpers in the plugin's `scripts/` directory. They
+This skill ships six Node helpers in the plugin's `scripts/` directory. They
 do **not** live in your human partner's project, so every command below needs
 the plugin's absolute path.
 
@@ -88,6 +89,11 @@ missing and stop — do not start the brainstorm.
      `land` will park instead of reporting tests green. Say so plainly before
      starting the brainstorm; the fix is one key in the project's
      `.claude/autopilot.json`.
+   - **`browser` half-configured** — the project supplied some of
+     `dev_command` / `base_url` but not all, so `verify` will park rather than
+     check UI criteria. A project that supplied neither never opted into
+     browser verification and produces no warning; that is the normal case for
+     a repository with no frontend.
    - `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
      effort level.
 
@@ -243,6 +249,36 @@ Dispatch the `spec` role to write the approved design into
 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` **inside the worktree**
 and commit it. This is the run's first commit. Nothing was written to the
 developer's checkout during Phase 1, and nothing is written there now.
+
+**The spec must carry an `## Acceptance criteria` section.** It is the run's
+one statement of what "done" means, and the `verify` stage reads it to decide
+both what to check in a browser and whether to open one at all. Instruct the
+spec role to write it in exactly this shape:
+
+```markdown
+## Acceptance criteria
+
+- AC1 (ui) — a signed-out visitor clicking "Save" sees the login prompt
+- AC2 (non-ui) — POST /items rejects an empty title with 422
+```
+
+Three rules travel with it:
+
+1. **Every criterion carries an `AC<n>` id and a `(ui)` or `(non-ui)` tag.**
+   The tag is the gate. An untagged criterion is an error, not a default —
+   defaulting it to `non-ui` would drop it from verification while the run
+   still reported success.
+2. **`(ui)` means observable in a browser** — something a person could confirm
+   by looking at or clicking the running app. Everything else is `(non-ui)`,
+   including API behavior with no visible surface.
+3. **Criteria state observable outcomes, not implementation.** "The list
+   re-sorts when the header is clicked" is verifiable; "the sort handler is
+   memoized" is not.
+
+Where the criteria come from depends on the entry point: `/autopilot-github`
+seeds them from the issue body, a plain `/autopilot` from the brainstorm's
+design. Either way the spec is where they land, which is what lets `plan` and
+`verify` both read one list.
 
 Append: `spec committed → <path>`.
 
@@ -476,6 +512,149 @@ cleanly and still break the branch: task A renames a function, task B adds a
 caller of the old name in a file A never touched, git reports nothing, and the
 branch is broken. The suite is the only thing that catches this.
 
+### `verify`
+
+Browser-verify the spec's UI acceptance criteria against the landed branch.
+
+This stage runs **after** `land`, on the rebased branch, for the same reason
+the test run does: a semantic conflict rebases clean and still breaks the UI.
+It runs **before** `pr`, so a broken feature never reaches a reviewer with a
+green PR description.
+
+#### Whether to run at all
+
+Read the criteria out of the committed spec:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" criteria <path-to-spec>
+```
+
+It prints the parsed criteria and a `ui` count, and exits non-zero when the
+spec has no `## Acceptance criteria` section or an item is untagged. Then:
+
+| Condition | Action |
+|---|---|
+| `ui` count is 0 | Append `verify: skipped (no ui criteria)` and go to `pr` |
+| `browser` unconfigured in `.claude/autopilot.json` | Append `verify: skipped (browser not configured)` and go to `pr` |
+| `browser` half-configured | **Park** — `PARKED — browser config incomplete: <keys>` |
+| The criteria command exits non-zero | **Park** — the spec cannot state what done means |
+
+The skip lines are not optional bookkeeping. `nextStage` resumes at `pr` by
+matching an entry starting `verify`, so a stage that skips silently sends every
+later resume back through `verify` forever.
+
+An unconfigured project skipping is correct — most repositories have no
+frontend. A *half*-configured one parking is equally deliberate: it means
+someone meant to enable this and left it broken, and reporting that run as
+verified is exactly the false green the `test_command` rule exists to prevent.
+
+#### What the project must already have
+
+`@playwright/test` resolvable from the project, and its browsers installed.
+The script checks this before it starts anything and returns the
+infrastructure exit if it is missing.
+
+**Autopilot never installs it.** A background `npx playwright install` on an
+unattended run downloads hundreds of megabytes into a developer's machine
+without asking, and a run that quietly provisions its own tooling is a run
+whose green result nobody can reproduce. The park message names the two
+commands to run; a human runs them once.
+
+#### The dispatch
+
+Dispatch the `verify` role. It authors the checks; the script runs them.
+
+Everything it writes goes to `.superpowers/autopilot/<run>/verify/` in the
+**main checkout** — `specs/` for the test files, `fixtures/` for mock data.
+Nothing is committed, and nothing goes in the worktree. These artifacts are
+per-run and worth exactly one run; the repository never carries them.
+
+The same harness constraint as the ledger applies: a worktree-isolated session
+cannot Write or Edit into the main checkout, but **Bash redirects work**. The
+role writes spec files with `cat > <path> <<'EOF'` heredocs.
+
+Specs import `@playwright/test` normally, even though they sit outside the
+project: the script symlinks the project's `node_modules` into the run
+directory so Node's upward resolution finds it. Do not work around this with
+absolute import paths — if an import fails, the stage returns the
+infrastructure exit and parks rather than reporting uncovered criteria.
+
+The dispatch prompt carries this contract:
+
+> Browser verification contract for this stage:
+>
+> 1. **One spec file per UI criterion, titled with its id.** A test titled
+>    `AC1 — visitor sees login prompt` is how the criterion and the result are
+>    matched in the report. A criterion with no test titled for it is reported
+>    as **not covered**, which is a failure of this stage, not a pass.
+> 2. **Derive locators from the worktree source, not from the page.** The
+>    implementation you are verifying was written by this same run — read the
+>    components in the worktree and use their roles, labels, and test ids.
+>    Prefer `getByRole` and `getByLabel` over structural selectors.
+> 3. **Never read a full-page DOM or accessibility dump into context.** If a
+>    locator cannot be derived from source, write one `main`-scoped
+>    `ariaSnapshot()` to a file in the run directory and `grep` it for the
+>    control you need. Scoped and grepped, never read whole.
+> 4. **Never read a screenshot back.** Screenshots and traces are written for
+>    the human reviewer. Reading one to confirm an assertion that already
+>    passed spends a large amount of context to learn nothing.
+> 5. **Never read `results.json` whole.** The script summarizes it. If you need
+>    detail beyond the summary, `jq` the one failing test out of it.
+> 6. **Mock at the network boundary, in `fixtures/`.** Prefer `page.route()`
+>    interception over standing up real backend state — it is deterministic,
+>    it needs no seed step, and it is thrown away with the run.
+> 7. **Do not write a Playwright config.** The script generates it, and its
+>    reporter and artifact settings are what rules 4 and 5 depend on.
+>
+> Rules 3 through 5 are the difference between a stage that costs a few
+> thousand tokens and one that compacts mid-run and starts guessing.
+
+Then run the checks:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" run \
+  --config=.claude/autopilot.json \
+  --run-dir=.superpowers/autopilot/<run>/verify \
+  --cwd=<worktree path>
+```
+
+The script owns everything mechanical: it generates the Playwright config,
+runs the optional `seed` command, starts `dev_command` in its own process
+group, polls `base_url` until it answers or `ready_timeout_ms` expires, runs
+the specs, and tears the whole process tree down. Do not start a dev server by
+hand, and do not check the port yourself — a stray server from a hand-started
+run holds the port and makes the next run look broken.
+
+#### Outcomes
+
+The script's exit code says which kind of failure this is, because they earn
+different responses:
+
+| Exit | Meaning | Action |
+|---|---|---|
+| 0 | Every criterion passed | Append `verify: <n>/<n> ui criteria passed` and continue |
+| 1 | A criterion failed | One fix round, below |
+| 2 | Infrastructure — server never answered, no report produced | **Park.** Not a fix round: the branch was never exercised |
+| 3 | Browser unconfigured | Skip, as above |
+| 4 | Browser half-configured | **Park** |
+
+**The fix round.** On exit 1, dispatch the `implement` role with the failing
+criteria and the summarized failures — not the raw report — then re-run the
+script. Green continues. Still red parks:
+`PARKED — verify red after fix round: <criteria>`.
+
+One round, mirroring `land`'s conflict resolver: one dispatched attempt, then a
+human decides. A stage that retries until green tunes the test to the bug.
+
+A failing criterion is a real finding, so append it to
+`.superpowers/autopilot/<run>/findings.jsonl` under the existing contract, with
+`stage_at_fault` drawn from the same four values — `implementation` when the UI
+does not do what the criterion says, `spec` when the criterion turned out to be
+ambiguous or untestable as written. Invent no new value; the learnings analyzer
+clusters on the four it knows.
+
+Append: `verify: <n>/<n> ui criteria passed`.
+
 ### `pr`
 
 Dispatch the `implement` role to run
@@ -502,10 +681,24 @@ a reviewer reads:
 ```bash
 RUN=.superpowers/autopilot/<branch>
 gh pr view <url> --json body --jq .body > "$RUN/pr-body.md"
+if [ -f "$RUN/verify/pr-section.md" ]; then
+  printf '\n\n' >> "$RUN/pr-body.md"
+  cat "$RUN/verify/pr-section.md" >> "$RUN/pr-body.md"
+fi
 printf '\n\n' >> "$RUN/pr-body.md"
 node "$AP/scripts/autopilot-ledger.mjs" timing "$RUN/run.md" >> "$RUN/pr-body.md"
 gh pr edit <url> --body-file "$RUN/pr-body.md"
 ```
+
+The verification section is written by the `verify` stage, in both the passing
+and the skipped case, so this stage formats nothing — it concatenates. A run
+whose `verify` stage never wrote one (an older run resumed, say) simply has no
+section, which is why the `cat` is guarded.
+
+Screenshots and traces stay local to the run directory and are **not** attached
+to the PR: `gh pr edit` takes markdown, and an image only renders from a URL,
+which would mean committing the files. The section names the artifact path
+instead, so a reviewer who wants the pixels knows where they are.
 
 The body file goes in the run directory, not `/tmp` — it is scoped to this
 branch, so two runs finishing at once cannot overwrite each other's PR body.
@@ -532,13 +725,18 @@ saw the earlier stages.
 
 ## Parking
 
-Five conditions park a run. Write the reason to the ledger, tell your human
+Nine conditions park a run. Write the reason to the ledger, tell your human
 partner plainly that the run needs a decision, and stop.
 
 - SDD reports BLOCKED — the round-5 breaker on a load-bearing finding
 - Rebase conflicts the resolver will not take confidently
 - Tests red after rebase
 - `test_command` not set, so the branch cannot be verified
+- The spec carries no usable `## Acceptance criteria` section
+- `browser` half-configured, so UI criteria cannot be checked
+- Browser verification infrastructure failed — the dev server never answered,
+  or Playwright produced no report
+- UI criteria still failing after the one fix round
 - `gh pr create` fails
 
 Never retry autonomously. Never push a red branch. Never resolve a
@@ -576,4 +774,9 @@ Never check for it, never wait on it.
 | "The run parked, but I know the fix — I'll resume it" | A park is a decision point for your human partner. Resuming past it opens a PR on a branch that parked for a reason. |
 | "Let me restate the design before I start Phase 2" | The clarifying questions already collected every decision. Re-presenting asks your human partner to approve their own answers and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
 | "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the brainstorm hands the design back. |
+| "The tests are green, so the feature works" | The suite proves the code does what the code says. A UI criterion is verified by opening it. That is what `verify` is for. |
+| "No `browser` config, so I'll just start the dev server myself and look" | A hand-started server holds the port after the run and makes the next one look broken. Unconfigured skips; half-configured parks. |
+| "Verification failed but I can see the fix — I'll patch it here" | Controller fixes skip review. The fix round is a dispatch, and there is exactly one. |
+| "One criterion has no test, but everything that ran passed" | Not covered is not passed. An uncovered criterion is this stage failing to do its job, and it is weighted as a failure. |
+| "I'll snapshot the page to find the right selector" | The run wrote the component. Read it. A full-page dump costs more context than the whole stage budget. |
 | "The design has a gap — I'll present it and ask" | A gap is a missed clarifying question, and the questions are still open while the brainstorm runs. Ask it there. Once the brainstorm hands back, Phase 2 owns the run. |

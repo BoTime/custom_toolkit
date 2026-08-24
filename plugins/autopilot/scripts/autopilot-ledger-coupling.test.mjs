@@ -17,7 +17,7 @@ import { parseLedger, nextStage } from "./autopilot-ledger.mjs";
 
 const HEADER = "# autopilot run — task: add a CSV export button";
 
-// The nine ledger entries SKILL.md instructs the orchestrator to append,
+// The ten ledger entries SKILL.md instructs the orchestrator to append,
 // in pipeline order, paired with the stage `nextStage` must return once a
 // ledger ends with that entry.
 const STAGE_ENTRIES = [
@@ -28,7 +28,8 @@ const STAGE_ENTRIES = [
   ["plan complete → docs/superpowers/plans/2026-07-29-x.md", "sdd"],
   ["sdd complete (6 tasks, 0 parked)", "learnings"],
   ["learnings committed → docs/autopilot/learnings.md", "land"],
-  ["rebase clean, tests green (42 passed)", "pr"],
+  ["rebase clean, tests green (42 passed)", "verify"],
+  ["verify: 3/3 ui criteria passed", "pr"],
   ["pr: https://example.com/pull/23", "done"],
 ];
 

@@ -4,6 +4,7 @@
     "spec":              { "model": "opus",   "effort": "high" },
     "plan":              { "model": "opus",   "effort": "high" },
     "learnings":         { "model": "opus",   "effort": "high" },
+    "verify":            { "model": "sonnet", "effort": "high" },
     "implement":         { "model": "sonnet", "effort": "medium" },
     "implement_complex": { "model": "opus",   "effort": "high" },
     "task_review":       { "model": "sonnet", "effort": "medium" },
@@ -15,6 +16,9 @@
   "base_ref": "origin/main",
   "reaper": true,
   "findings_threshold": 2,
+  "browser": {
+    "ready_timeout_ms": 60000
+  },
   "github": {
     "status_field": "Status",
     "status_ready": "Ready",
