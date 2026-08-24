@@ -59,9 +59,28 @@ describe("nextStage", () => {
     expect(nextStage(parseLedger(LEDGER))).toBe("done");
   });
 
-  it("returns pr when landing finished but no PR exists", () => {
+  it("returns verify when landing finished but nothing was verified", () => {
     const partial = LEDGER.split("\n").slice(0, 9).join("\n");
-    expect(nextStage(parseLedger(partial))).toBe("pr");
+    expect(nextStage(parseLedger(partial))).toBe("verify");
+  });
+
+  it("returns pr once verify has reported", () => {
+    const landed = LEDGER.split("\n").slice(0, 9).join("\n");
+    const verified = `${landed}\n2026-07-29T16:19:02Z  verify: 3/3 ui criteria passed`;
+    expect(nextStage(parseLedger(verified))).toBe("pr");
+  });
+
+  // The skip lines are the reason `nextStage` matches the bare `verify`
+  // prefix rather than a passing-run phrase. A run that skips the stage and
+  // appends nothing would resolve to `verify` forever.
+  it("returns pr when verify skipped rather than passed", () => {
+    const landed = LEDGER.split("\n").slice(0, 9).join("\n");
+    for (const skip of [
+      "verify: skipped (no ui criteria)",
+      "verify: skipped (browser not configured)",
+    ]) {
+      expect(nextStage(parseLedger(`${landed}\n2026-07-29T16:19:02Z  ${skip}`))).toBe("pr");
+    }
   });
 
   it("returns land when learnings is committed", () => {

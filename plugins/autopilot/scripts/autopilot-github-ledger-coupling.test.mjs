@@ -39,7 +39,8 @@ const STAGE_ENTRIES = [
   ["plan complete → docs/superpowers/plans/2026-08-21-x.md (6 tasks)", "sdd"],
   ["sdd complete (6 tasks, 0 parked, 0 fix rounds across 0 tasks)", "learnings"],
   ["learnings committed → docs/autopilot/learnings.md", "land"],
-  ["rebase clean, tests green (42 passed)", "pr"],
+  ["rebase clean, tests green (42 passed)", "verify"],
+  ["verify: 3/3 ui criteria passed", "pr"],
   ["pr: https://example.com/pull/23", "done"],
 ];
 

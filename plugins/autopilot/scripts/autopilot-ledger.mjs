@@ -34,7 +34,11 @@ export function nextStage(ledger) {
   }
 
   if (has("pr:")) return "done";
-  if (has("rebase clean")) return "pr";
+  // `verify` covers both outcomes that let the run continue — a pass and a
+  // documented skip — because a skipped stage that appends nothing would send
+  // every resume back through verify forever.
+  if (has("verify")) return "pr";
+  if (has("rebase clean")) return "verify";
   if (has("learnings committed")) return "land";
   if (has("sdd complete")) return "learnings";
   if (has("plan complete")) return "sdd";

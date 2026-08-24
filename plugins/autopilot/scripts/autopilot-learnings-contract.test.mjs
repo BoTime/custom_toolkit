@@ -107,8 +107,8 @@ describe("the sdd section resumes sdd completion into learnings", () => {
 describe("the resume section lists the learnings stage", () => {
   const whole = unwrap(skill);
 
-  it("counts ten values and eight stages", () => {
-    expect(whole).toMatch(/one of ten values/i);
-    expect(whole).toMatch(/the eight stages/i);
+  it("counts eleven values and nine stages", () => {
+    expect(whole).toMatch(/one of eleven values/i);
+    expect(whole).toMatch(/the nine stages/i);
   });
 });

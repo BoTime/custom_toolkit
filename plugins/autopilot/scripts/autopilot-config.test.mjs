@@ -13,6 +13,7 @@ const validConfig = () => ({
     spec: { model: "opus", effort: "high" },
     plan: { model: "opus", effort: "xhigh" },
     learnings: { model: "opus", effort: "high" },
+    verify: { model: "sonnet", effort: "high" },
     implement: { model: "sonnet", effort: "medium" },
     implement_complex: { model: "opus", effort: "high" },
     task_review: { model: "opus", effort: "high" },
@@ -28,10 +29,11 @@ const validConfig = () => ({
 });
 
 describe("ROLES and EFFORTS", () => {
-  it("lists exactly the ten roles", () => {
+  it("lists exactly the eleven roles", () => {
     expect(ROLES).toEqual([
-      "brainstorm", "spec", "plan", "learnings", "implement", "implement_complex",
-      "task_review", "re_review", "final_review", "fix_escalation",
+      "brainstorm", "spec", "plan", "learnings", "verify", "implement",
+      "implement_complex", "task_review", "re_review", "final_review",
+      "fix_escalation",
     ]);
   });
 
@@ -173,7 +175,7 @@ describe("mergeConfig", () => {
     expect(merged.worktree_dir).toBe(".claude/worktrees");
   });
 
-  it("overrides one role and preserves the other nine", () => {
+  it("overrides one role and preserves the other ten", () => {
     const merged = mergeConfig(validConfig(), {
       roles: { implement: { model: "opus" } },
     });
@@ -181,7 +183,7 @@ describe("mergeConfig", () => {
     // effort survives a partial role override
     expect(merged.roles.implement.effort).toBe("medium");
     expect(merged.roles.plan).toEqual({ model: "opus", effort: "xhigh" });
-    expect(Object.keys(merged.roles)).toHaveLength(10);
+    expect(Object.keys(merged.roles)).toHaveLength(11);
   });
 
   it("does not mutate the defaults", () => {
