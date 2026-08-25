@@ -299,3 +299,41 @@ describe("parking conditions include the verify failures", () => {
     expect(parking).toMatch(/still failing after the one fix round/i);
   });
 });
+
+describe("plan stage derives the verify recipe", () => {
+  const plan = unwrap(section(skill, "plan"));
+
+  it("writes it to the per-run verify directory in the main checkout", () => {
+    expect(plan).toContain(".superpowers/autopilot/<run>/verify/recipe.json");
+    expect(plan).toMatch(/main checkout/i);
+  });
+
+  // Same harness constraint as the ledger: Write/Edit cannot reach the main
+  // checkout from a worktree session, but Bash redirects can.
+  it("names the Bash heredoc as how the file gets written", () => {
+    expect(plan).toMatch(/heredoc/i);
+  });
+
+  it("names every recipe key and which two are required", () => {
+    for (const key of [...RECIPE_KEYS, "stop_command", "seed_command"]) {
+      expect(plan).toContain(key);
+    }
+    expect(plan).toMatch(/required/i);
+  });
+
+  it("tells the stage where to read the project's dev setup from", () => {
+    expect(plan).toMatch(/package\.json/);
+    expect(plan).toMatch(/README/);
+  });
+
+  // Rederived, not committed: a committed recipe is a second copy of the dev
+  // setup that drifts silently, because nothing runs it except autopilot.
+  it("says it is rederived every run and never committed", () => {
+    expect(plan).toMatch(/rederived|derived every run/i);
+    expect(plan).toMatch(/never committed|not committed/i);
+  });
+
+  it("skips the derivation when the spec declares no ui criteria", () => {
+    expect(plan).toMatch(/\(ui\)/);
+  });
+});

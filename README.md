@@ -19,7 +19,7 @@ To update later: `/plugin marketplace update custom-toolkit`.
 Takes a task from idea to pull request. Phase 1 is an interactive brainstorm —
 clarifying questions one at a time, then a design stated once, with no
 approval gate afterward. Phase 2 runs unattended from there through spec,
-plan, implementation, landing, and PR.
+plan, implementation, browser verification, landing, and PR.
 
 ```
 /autopilot <task description>
@@ -67,6 +67,28 @@ catches semantic conflicts (task A renames a function, task B adds a caller of
 the old name, git reports nothing, the branch is broken). Unset, preflight
 warns and the `land` stage parks rather than reporting green.
 
+#### Turning browser verification on
+
+**Writing a `(ui)` acceptance criterion in the spec turns it on.** There is no
+flag and nothing to configure:
+
+```markdown
+## Acceptance criteria
+
+- AC1 (ui) — a signed-out visitor clicking "Save" sees the login prompt
+- AC2 (non-ui) — POST /items rejects an empty title with 422
+```
+
+The `verify` stage — between `sdd` and `learnings` — then drives Playwright
+against the running app and reports each criterion in the PR. A repo that
+writes no `(ui)` criterion never pays for it, and the stage never speaks. What
+the app needs is `@playwright/test` as a devDependency, with its browsers
+installed; autopilot never installs it. The commands that bring the app up are
+**derived**, not configured: the `plan` stage reads `package.json`, compose
+files, `scripts/` and the README, and writes a per-run recipe under
+`.superpowers/`. A declared `(ui)` criterion the stage cannot verify parks the
+run rather than reporting green.
+
 | Key | Default | Purpose |
 |---|---|---|
 | `test_command` | *(none)* | Verifies the branch after rebase. Unset → `land` parks. |
@@ -74,6 +96,7 @@ warns and the `land` stage parks rather than reporting green.
 | `worktree_dir` | `.claude/worktrees` | Where run worktrees are created |
 | `reaper` | `true` | Prune merged worktrees at `setup` |
 | `roles` | see defaults | Per-role `model` and `effort` for the nine dispatch roles |
+| `browser.ready_timeout_ms` | `120000` | How long `verify` waits for the app to answer before calling the stack dead |
 | `github` | four status names | Projects v2 wiring for `/autopilot-github` only. Ignored by plain `/autopilot`. |
 
 `/autopilot-github` additionally needs the two keys that cannot be guessed. The
@@ -103,7 +126,7 @@ effort level.
 
 ```bash
 npm install
-npm test                                    # vitest, 268 tests
+npm test                                    # vitest, 393 tests
 claude plugin validate ./plugins/autopilot  # manifest check
 claude --plugin-dir ./plugins/autopilot     # load locally for one session
 ```

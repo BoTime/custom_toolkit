@@ -317,6 +317,55 @@ deliberately learnings-free. Include text equivalent to:
 > this plan. If the file is absent — an early run, or a repo that has never
 > produced learnings — plan without it. No error, no parking.
 
+#### Derive the verify recipe
+
+If the committed spec carries no `(ui)` acceptance criterion, skip this — the
+`verify` stage will skip too, and a recipe nothing reads is waste. Otherwise,
+derive one now, because `verify` runs next.
+
+Read the project the way a new contributor would — `package.json` scripts, any
+compose file, `scripts/`, the README — and answer four questions:
+
+| Key | Question | Required |
+|---|---|---|
+| `dev_command` | What one command brings the app up? | yes |
+| `base_url_command` | What one command prints the URL it came up on? | yes |
+| `stop_command` | What one command takes it back down? | no |
+| `seed_command` | What one command loads test data, if any is needed? | no |
+
+Write the answers to `.superpowers/autopilot/<run>/verify/recipe.json` in the
+**main checkout**. A worktree-isolated session cannot Write or Edit there, but
+Bash redirects work — use a heredoc, the same way the `verify` stage writes its
+spec files:
+
+```bash
+mkdir -p .superpowers/autopilot/<run>/verify
+cat > .superpowers/autopilot/<run>/verify/recipe.json <<'EOF'
+{
+  "dev_command":      "bash scripts/worktree-up.sh",
+  "base_url_command": "grep '^WEB_ORIGIN=' apps/api/.env | cut -d= -f2-",
+  "stop_command":     "bash scripts/worktree-down.sh",
+  "seed_command":     "npm run db:seed:test"
+}
+EOF
+```
+
+Three rules travel with it:
+
+1. **`base_url_command` prints the URL and nothing else.** It runs in the
+   worktree after `dev_command`, and its trimmed stdout *is* the base URL. Read
+   it from wherever the project already states it — an env file, `docker
+   compose port`, a `--print-url` flag. Prefer that to a hardcoded port: a
+   worktree-up script that reassigns occupied ports has no fixed URL to state.
+2. **The recipe is rederived every run and never committed.** It is gitignored
+   under `.superpowers/`. A committed recipe is a second copy of the project's
+   dev setup that drifts the moment someone changes a port or renames a script,
+   and it drifts silently, because nothing runs it except autopilot.
+3. **Do not verify the recipe by running it.** Nothing checks it at the moment
+   it is written; a wrong derivation surfaces as a `verify` park several stages
+   later. That is the accepted cost of not keeping a hand-maintained copy of
+   facts the repository already states.
+
 Append: `plan complete → <path> (<n> tasks)`.
 
 ### `sdd`
