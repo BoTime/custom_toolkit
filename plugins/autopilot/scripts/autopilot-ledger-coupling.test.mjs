@@ -17,7 +17,7 @@ import { parseLedger, nextStage } from "./autopilot-ledger.mjs";
 
 const HEADER = "# autopilot run — task: add a CSV export button";
 
-// The nine ledger entries SKILL.md instructs the orchestrator to append,
+// The ten ledger entries SKILL.md instructs the orchestrator to append,
 // in pipeline order, paired with the stage `nextStage` must return once a
 // ledger ends with that entry.
 const STAGE_ENTRIES = [
@@ -26,7 +26,8 @@ const STAGE_ENTRIES = [
   ["worktree: .claude/worktrees/x (branch x)", "spec"],
   ["spec committed → docs/superpowers/specs/2026-07-29-x-design.md", "plan"],
   ["plan complete → docs/superpowers/plans/2026-07-29-x.md", "sdd"],
-  ["sdd complete (6 tasks, 0 parked)", "learnings"],
+  ["sdd complete (6 tasks, 0 parked)", "verify"],
+  ["verify: 3/3 ui criteria passed", "learnings"],
   ["learnings committed → docs/autopilot/learnings.md", "land"],
   ["rebase clean, tests green (42 passed)", "pr"],
   ["pr: https://example.com/pull/23", "done"],
@@ -58,23 +59,21 @@ describe("SKILL.md <-> nextStage coupling", () => {
     expect(nextStage(parseLedger(ledger))).toBe("parked");
   });
 
-  it('"sdd complete (6 tasks, 2 parked)" as the last entry returns "learnings", not "parked"', () => {
+  it('"sdd complete (6 tasks, 2 parked)" as the last entry returns "verify", not "parked"', () => {
     const cumulative = [
       ...STAGE_ENTRIES.slice(0, 5).map(([text]) => text), // through "plan complete"
       "sdd complete (6 tasks, 2 parked)",
     ];
-    const ledger = buildLedger(cumulative);
-    expect(nextStage(parseLedger(ledger))).toBe("learnings");
+    expect(nextStage(parseLedger(buildLedger(cumulative)))).toBe("verify");
   });
 
-  it('"sdd complete" with fix-round counts still returns "learnings"', () => {
+  it('"sdd complete" with fix-round counts still returns "verify"', () => {
     // The entry grew a fix-round clause. nextStage matches it by PREFIX, so
     // the longer wording must keep resolving to the same stage.
     const cumulative = [
       ...STAGE_ENTRIES.slice(0, 5).map(([text]) => text), // through "plan complete"
       "sdd complete (10 tasks, 0 parked, 7 fix rounds across 4 tasks)",
     ];
-    const ledger = buildLedger(cumulative);
-    expect(nextStage(parseLedger(ledger))).toBe("learnings");
+    expect(nextStage(parseLedger(buildLedger(cumulative)))).toBe("verify");
   });
 });

@@ -93,22 +93,23 @@ describe("plan dispatch prompt reads the learnings doc", () => {
   });
 });
 
-describe("the sdd section resumes sdd completion into learnings", () => {
+describe("the sdd section resumes sdd completion into verify", () => {
   const sddText = unwrap(stageSection(skill, "sdd"));
 
-  it("redirects sdd completion to the learnings stage", () => {
+  it("redirects sdd completion to the verify stage", () => {
     // Load-bearing redirect: `nextStage` resumes a run ending in `sdd complete`
-    // at `learnings`, not `land`. Without this guard, an edit reverting the
-    // prose to `land` would pass every other test.
-    expect(sddText).toMatch(/resume the run at `learnings`/i);
+    // at `verify`, which then hands off to `learnings`. Without this guard, an
+    // edit reverting the prose to `learnings` or `land` would pass every other
+    // test.
+    expect(sddText).toMatch(/resume the run at `verify`/i);
   });
 });
 
 describe("the resume section lists the learnings stage", () => {
   const whole = unwrap(skill);
 
-  it("counts ten values and eight stages", () => {
-    expect(whole).toMatch(/one of ten values/i);
-    expect(whole).toMatch(/the eight stages/i);
+  it("counts eleven values and nine stages", () => {
+    expect(whole).toMatch(/one of eleven values/i);
+    expect(whole).toMatch(/the nine stages/i);
   });
 });

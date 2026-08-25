@@ -17,8 +17,9 @@ If invoked as `/autopilot resume <branch>`, read
 `.superpowers/autopilot/<branch>/run.md`, call `nextStage` on it, and jump to
 that stage. Do not redo completed stages. Then follow the pipeline from there.
 
-`nextStage` returns one of ten values: the eight stages — `phase1`, `setup`,
-`spec`, `plan`, `sdd`, `learnings`, `land`, `pr` — plus `done` and `parked`.
+`nextStage` returns one of eleven values: the nine stages — `phase1`, `setup`,
+`spec`, `plan`, `sdd`, `verify`, `learnings`, `land`, `pr` — plus `done` and
+`parked`.
 
 - A stage name — jump to that stage and follow the pipeline from there.
 - `done` — the run reached its PR. Report the URL from the ledger and stop.
@@ -30,7 +31,7 @@ that stage. Do not redo completed stages. Then follow the pipeline from there.
 
 ## Locating the plugin's scripts
 
-This skill ships four Node helpers in the plugin's `scripts/` directory. They
+This skill ships six Node helpers in the plugin's `scripts/` directory. They
 do **not** live in your human partner's project, so every command below needs
 the plugin's absolute path.
 
@@ -244,6 +245,36 @@ Dispatch the `spec` role to write the approved design into
 and commit it. This is the run's first commit. Nothing was written to the
 developer's checkout during Phase 1, and nothing is written there now.
 
+**The spec must carry an `## Acceptance criteria` section.** It is the run's
+one statement of what "done" means, and the `verify` stage reads it to decide
+both what to check in a browser and whether to open one at all. Instruct the
+spec role to write it in exactly this shape:
+
+```markdown
+## Acceptance criteria
+
+- AC1 (ui) — a signed-out visitor clicking "Save" sees the login prompt
+- AC2 (non-ui) — POST /items rejects an empty title with 422
+```
+
+Three rules travel with it:
+
+1. **Every criterion carries an `AC<n>` id and a `(ui)` or `(non-ui)` tag.**
+   The tag is the gate. An untagged criterion is an error, not a default —
+   defaulting it to `non-ui` would drop it from verification while the run
+   still reported success.
+2. **`(ui)` means observable in a browser** — something a person could confirm
+   by looking at or clicking the running app. Everything else is `(non-ui)`,
+   including API behavior with no visible surface.
+3. **Criteria state observable outcomes, not implementation.** "The list
+   re-sorts when the header is clicked" is verifiable; "the sort handler is
+   memoized" is not.
+
+Where the criteria come from depends on the entry point: `/autopilot-github`
+seeds them from the issue body, a plain `/autopilot` from the brainstorm's
+design. Either way the spec is where they land, which is what lets `plan` and
+`verify` both read one list.
+
 Append: `spec committed → <path>`.
 
 ### `plan`
@@ -285,6 +316,55 @@ deliberately learnings-free. Include text equivalent to:
 > Read `docs/autopilot/learnings.md` if present and apply its planning rules to
 > this plan. If the file is absent — an early run, or a repo that has never
 > produced learnings — plan without it. No error, no parking.
+
+#### Derive the verify recipe
+
+If the committed spec carries no `(ui)` acceptance criterion, skip this — the
+`verify` stage will skip too, and a recipe nothing reads is waste. Otherwise,
+derive one now, because `verify` runs next.
+
+Read the project the way a new contributor would — `package.json` scripts, any
+compose file, `scripts/`, the README — and answer four questions:
+
+| Key | Question | Required |
+|---|---|---|
+| `dev_command` | What one command brings the app up? | yes |
+| `base_url_command` | What one command prints the URL it came up on? | yes |
+| `stop_command` | What one command takes it back down? | no |
+| `seed_command` | What one command loads test data, if any is needed? | no |
+
+Write the answers to `.superpowers/autopilot/<run>/verify/recipe.json` in the
+**main checkout**. A worktree-isolated session cannot Write or Edit there, but
+Bash redirects work — use a heredoc, the same way the `verify` stage writes its
+spec files:
+
+```bash
+mkdir -p .superpowers/autopilot/<run>/verify
+cat > .superpowers/autopilot/<run>/verify/recipe.json <<'EOF'
+{
+  "dev_command":      "bash scripts/worktree-up.sh",
+  "base_url_command": "grep '^WEB_ORIGIN=' apps/api/.env | cut -d= -f2-",
+  "stop_command":     "bash scripts/worktree-down.sh",
+  "seed_command":     "npm run db:seed:test"
+}
+EOF
+```
+
+Three rules travel with it:
+
+1. **`base_url_command` prints the URL and nothing else.** It runs in the
+   worktree after `dev_command`, and its trimmed stdout *is* the base URL. Read
+   it from wherever the project already states it — an env file, `docker
+   compose port`, a `--print-url` flag. Prefer that to a hardcoded port: a
+   worktree-up script that reassigns occupied ports has no fixed URL to state.
+2. **The recipe is rederived every run and never committed.** It is gitignored
+   under `.superpowers/`. A committed recipe is a second copy of the project's
+   dev setup that drifts the moment someone changes a port or renames a script,
+   and it drifts silently, because nothing runs it except autopilot.
+3. **Do not verify the recipe by running it.** Nothing checks it at the moment
+   it is written; a wrong derivation surfaces as a `verify` park several stages
+   later. That is the accepted cost of not keeping a hand-maintained copy of
+   facts the repository already states.
 
 Append: `plan complete → <path> (<n> tasks)`.
 
@@ -412,23 +492,257 @@ Append: `sdd complete (<n> tasks, <k> parked, <f> fix rounds across <t> tasks)`
 Count a fix round every time a task returns to its implementer after a review
 finding; `<t>` is how many distinct tasks needed at least one. Keep the
 `sdd complete (` prefix exactly — `nextStage` matches it to resume the run at
-`learnings`. Without the fix-round clause, a run where every task needed three
+`verify`. Without the fix-round clause, a run where every task needed three
 rounds renders identically to one where all passed first try, so a struggling
 run is invisible at a glance.
+
+### `verify`
+
+Browser-verify the spec's UI acceptance criteria against the branch `sdd` just
+finished writing.
+
+This stage runs **after** `sdd` and **before** `learnings`, on the pre-rebase
+tree. That placement is a deliberate trade. The previous design verified the
+landed branch, because a semantic conflict can rebase clean and still break the
+UI — and that risk is real: the post-rebase `test_command` run inside `land`
+remains the only gate after landing, and it sees no pixels.
+
+What the trade buys is worth more. A failed criterion found here is a fix on
+the working branch, in the same run, against a tree nobody has rebased and
+while the implementation context is still fresh. And `learnings` now runs
+*after* `verify`, so it can distil what the browser saw — the strongest
+evidence a run produces about whether the spec described the feature correctly,
+which previously arrived too late to be distilled at all.
+
+#### Whether to run at all
+
+**Writing a `(ui)` acceptance criterion in the spec turns this stage on.**
+There is no flag, no path glob, no auto-detection heuristic, and nothing to
+configure.
+
+Read the criteria out of the committed spec:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" criteria <path-to-spec>
+```
+
+It prints the parsed criteria and a `ui` count, and exits non-zero when the
+spec has no `## Acceptance criteria` section or an item is untagged. Then:
+
+| Condition | Action |
+|---|---|
+| `ui` count is 0 | Run the `skip` subcommand below, append `verify: skipped (no ui criteria)`, and go to `learnings` |
+| `(ui)` criteria and a usable `recipe.json` | Run |
+| `(ui)` criteria, no usable `recipe.json` | **Park** — `PARKED — verify cannot run: <reason>` |
+| `(ui)` criteria, `@playwright/test` absent | **Park** — same line |
+| The criteria command exits non-zero | **Park** — the spec cannot state what done means |
+
+Skipping is two steps, not one:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" skip \
+  --run-dir=.superpowers/autopilot/<run>/verify \
+  --reason="no ui acceptance criteria"
+```
+
+then append `verify: skipped (no ui criteria)`.
+
+Neither step is optional bookkeeping. The `skip` subcommand writes the
+`pr-section.md` that the `pr` stage concatenates, which is what lets that stage
+say the verification section is written here in both the passing and the
+skipped case; without it a skipped run silently has no section at all. And
+`nextStage` resumes at `learnings` by matching an entry starting `verify`, so a
+stage that skips without appending its ledger line sends every later resume
+back through `verify` forever.
+
+A backend repo therefore costs nothing: it writes no `(ui)` criteria and this
+stage never speaks. The two parks are the deliberate part. A criterion with no
+test is a failure, not a pass — so a run that declared UI criteria and then
+could not open a browser must not report success. Skipping there would report
+green on the exact gap this stage exists to close.
+
+#### The recipe the `plan` stage derived
+
+The commands come from `.superpowers/autopilot/<run>/verify/recipe.json` in the
+**main checkout**, written by the `plan` stage by reading the project the way a
+new contributor would. Nothing here is configured by hand:
+
+```json
+{
+  "dev_command":      "bash scripts/worktree-up.sh",
+  "base_url_command": "grep '^WEB_ORIGIN=' apps/api/.env | cut -d= -f2-",
+  "stop_command":     "bash scripts/worktree-down.sh",
+  "seed_command":     "npm run db:seed:test"
+}
+```
+
+`dev_command` and `base_url_command` are required; `stop_command` and
+`seed_command` are optional. Do not write this file at this stage and do not
+patch it by hand — a recipe that verify repaired for itself would hide the
+derivation bug rather than surfacing it as a park.
+
+`base_url_command` runs **in the worktree, after `dev_command`**, and its
+trimmed stdout is the base URL. It is never written down and never persisted: a
+worktree-up script that derives ports from the worktree name and reassigns them
+when a block is occupied cannot state its URL in advance, and a static one is
+wrong on the second concurrent run.
+
+#### What the project must already have
+
+`@playwright/test` resolvable from the project, and its browsers installed.
+The script checks this before it starts anything and returns exit 4 if it is
+missing.
+
+**Autopilot never installs it.** A background `npx playwright install` on an
+unattended run downloads hundreds of megabytes into a developer's machine
+without asking, and a run that quietly provisions its own tooling is a run
+whose green result nobody can reproduce. The park message names the two
+commands to run; a human runs them once.
+
+#### The dispatch
+
+Dispatch the `verify` role. It authors the checks; the script runs them.
+
+Everything it writes goes to `.superpowers/autopilot/<run>/verify/` in the
+**main checkout** — `specs/` for the test files, `fixtures/` for mock data.
+Nothing is committed, and nothing goes in the worktree. These artifacts are
+per-run and worth exactly one run; the repository never carries them.
+
+The same harness constraint as the ledger applies: a worktree-isolated session
+cannot Write or Edit into the main checkout, but **Bash redirects work**. The
+role writes spec files with `cat > <path> <<'EOF'` heredocs.
+
+Specs import `@playwright/test` normally, even though they sit outside the
+project: the script symlinks the project's `node_modules` into the run
+directory so Node's upward resolution finds it. Do not work around this with
+absolute import paths — if an import fails, the stage returns the
+infrastructure exit and parks rather than reporting uncovered criteria.
+
+The dispatch prompt carries this contract:
+
+> Browser verification contract for this stage:
+>
+> 1. **One spec file per UI criterion, titled with its id.** A test titled
+>    `AC1 — visitor sees login prompt` is how the criterion and the result are
+>    matched in the report. A criterion with no test titled for it is reported
+>    as **not covered**, which is a failure of this stage, not a pass.
+> 2. **Derive locators from the worktree source, not from the page.** The
+>    implementation you are verifying was written by this same run — read the
+>    components in the worktree and use their roles, labels, and test ids.
+>    Prefer `getByRole` and `getByLabel` over structural selectors.
+> 3. **Never read a full-page DOM or accessibility dump into context.** If a
+>    locator cannot be derived from source, write one `main`-scoped
+>    `ariaSnapshot()` to a file in the run directory and `grep` it for the
+>    control you need. Scoped and grepped, never read whole.
+> 4. **Never read a screenshot back.** Screenshots and traces are written for
+>    the human reviewer. Reading one to confirm an assertion that already
+>    passed spends a large amount of context to learn nothing.
+> 5. **Never read `results.json` whole.** The script summarizes it. If you need
+>    detail beyond the summary, `jq` the one failing test out of it.
+> 6. **Mock at the network boundary, in `fixtures/`.** Prefer `page.route()`
+>    interception over standing up real backend state — it is deterministic,
+>    it needs no seed step, and it is thrown away with the run.
+> 7. **Do not write a Playwright config.** The script generates it, and its
+>    reporter and artifact settings are what rules 4 and 5 depend on.
+>
+> Rules 3 through 5 are the difference between a stage that costs a few
+> thousand tokens and one that compacts mid-run and starts guessing.
+
+Then run the checks:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" run \
+  --config=.claude/autopilot.json \
+  --run-dir=.superpowers/autopilot/<run>/verify \
+  --cwd=<worktree path> \
+  --spec=<path-to-spec>
+```
+
+The script owns everything mechanical: it reads the recipe, checks that
+`@playwright/test` resolves, starts `dev_command` in its own process group,
+resolves the base URL with `base_url_command`, polls that URL until it answers
+or `ready_timeout_ms` (default 120000) expires, runs the optional
+`seed_command` — after the stack is up, because the canonical `dev_command`
+starts the database the seed talks to — generates the Playwright config, runs
+the specs, and tears the stack down with `stop_command` in a `finally` —
+falling back to killing the process group only when the recipe supplies no stop
+command. A clean `dev_command` exit means setup finished, not that the server
+died; only a non-zero exit is a failure. Do not start a dev server by hand, and
+do not check the port yourself — a stray server from a hand-started run holds
+the port and makes the next run look broken.
+
+#### Outcomes
+
+The script's exit code says which kind of failure this is, because they earn
+different responses:
+
+| Exit | Meaning | Action |
+|---|---|---|
+| 0 | Every criterion passed | Append `verify: <n>/<n> ui criteria passed` and continue |
+| 1 | A criterion failed | One fix round, below |
+| 2 | Infrastructure — server never answered, no report produced | **Park.** Not a fix round: the branch was never exercised |
+| 3 | No `(ui)` criteria | Skip, as above |
+| 4 | Cannot verify despite `(ui)` criteria — no usable recipe, or `@playwright/test` absent | **Park** |
+
+**The fix round.** On exit 1, dispatch the `implement` role with the failing
+criteria and the summarized failures — not the raw report — then re-run the
+script **with `--round=2`**:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" run \
+  --config=.claude/autopilot.json \
+  --run-dir=.superpowers/autopilot/<run>/verify \
+  --cwd=<worktree path> \
+  --spec=<path-to-spec> \
+  --round=2
+```
+
+Green continues. Still red parks:
+`PARKED — verify red after fix round: <criteria>`.
+
+One round, mirroring `land`'s conflict resolver: one dispatched attempt, then a
+human decides. A stage that retries until green tunes the test to the bug.
+
+The flag is not bookkeeping. The first invocation of `run`, up in the dispatch,
+omits it and is round 1; this re-run must say `--round=2`, or a criterion still
+red writes a second finding identical to the first and the findings clustering
+reads one twice-failing criterion as two. Since only one fix round is ever
+attempted, `2` is the only value this flag ever takes.
+
+The script appends the findings itself, to
+`.superpowers/autopilot/<run>/findings.jsonl` in the **main checkout**, under
+the existing seven-field contract — `task`, `round`, `severity`,
+`stage_at_fault`, `pattern`, `detail`, `verdict` — with `task: 0` as the
+sentinel for "not a numbered SDD task", and `{"task": 0, "clean": true}` when
+every criterion passed. `stage_at_fault` stays inside the same four values,
+but this stage can only ever emit `implementation` — it has no way to tell a
+broken UI from an ambiguous criterion, so every unmet criterion is attributed
+to the implementation that failed to satisfy it as written. Invent no new
+value — and in particular no `verify` value: the field names the stage that
+produced the bad input, never the stage that surfaced it. Do not append these
+lines yourself; the script has already written them.
+
+`learnings` now runs immediately after this stage, which is what lets it read
+browser evidence and review evidence in one pass.
+
+Append: `verify: <n>/<n> ui criteria passed`.
 
 ### `learnings`
 
 Dispatch the `learnings` role to rewrite `docs/autopilot/learnings.md` inside
 the worktree and commit it. This is the one artifact the pipeline both writes
-and reads: `sdd` captures review findings, the learnings role distills them
-into planning rules, and the next run's `plan` stage reads the doc.
+and reads: `sdd` and `verify` both capture findings — code-review findings and
+browser evidence respectively — the learnings role distills them into planning
+rules, and the next run's `plan` stage reads the doc.
 
 The dispatch prompt instructs the role to:
 
 1. Read this run's findings at `.superpowers/autopilot/<run>/findings.jsonl`
    in the **main checkout** — via Bash, not Write/Edit, because a
    worktree-isolated session cannot write the main checkout but Bash reads
-   work.
+   work. The file mixes both producers under one seven-field contract: `sdd`'s
+   review findings and `verify`'s browser evidence, told apart by
+   `stage_at_fault` and `pattern`, not by any producer tag.
 2. Read the accumulated corpus across `.superpowers/autopilot/*/findings.jsonl`
    the same way.
 3. Read the existing `docs/autopilot/learnings.md` on the branch, if present.
@@ -502,10 +816,24 @@ a reviewer reads:
 ```bash
 RUN=.superpowers/autopilot/<branch>
 gh pr view <url> --json body --jq .body > "$RUN/pr-body.md"
+if [ -f "$RUN/verify/pr-section.md" ]; then
+  printf '\n\n' >> "$RUN/pr-body.md"
+  cat "$RUN/verify/pr-section.md" >> "$RUN/pr-body.md"
+fi
 printf '\n\n' >> "$RUN/pr-body.md"
 node "$AP/scripts/autopilot-ledger.mjs" timing "$RUN/run.md" >> "$RUN/pr-body.md"
 gh pr edit <url> --body-file "$RUN/pr-body.md"
 ```
+
+The verification section is written by the `verify` stage, in both the passing
+and the skipped case, so this stage formats nothing — it concatenates. A run
+whose `verify` stage never wrote one (an older run resumed, say) simply has no
+section, which is why the `cat` is guarded.
+
+Screenshots and traces stay local to the run directory and are **not** attached
+to the PR: `gh pr edit` takes markdown, and an image only renders from a URL,
+which would mean committing the files. The section names the artifact path
+instead, so a reviewer who wants the pixels knows where they are.
 
 The body file goes in the run directory, not `/tmp` — it is scoped to this
 branch, so two runs finishing at once cannot overwrite each other's PR body.
@@ -532,13 +860,19 @@ saw the earlier stages.
 
 ## Parking
 
-Five conditions park a run. Write the reason to the ledger, tell your human
+Nine conditions park a run. Write the reason to the ledger, tell your human
 partner plainly that the run needs a decision, and stop.
 
 - SDD reports BLOCKED — the round-5 breaker on a load-bearing finding
 - Rebase conflicts the resolver will not take confidently
 - Tests red after rebase
 - `test_command` not set, so the branch cannot be verified
+- The spec carries no usable `## Acceptance criteria` section
+- UI criteria were declared but cannot be verified — no usable verify recipe,
+  or `@playwright/test` is absent
+- Browser verification infrastructure failed — the dev server never answered,
+  or Playwright produced no report
+- UI criteria still failing after the one fix round
 - `gh pr create` fails
 
 Never retry autonomously. Never push a red branch. Never resolve a
@@ -576,4 +910,9 @@ Never check for it, never wait on it.
 | "The run parked, but I know the fix — I'll resume it" | A park is a decision point for your human partner. Resuming past it opens a PR on a branch that parked for a reason. |
 | "Let me restate the design before I start Phase 2" | The clarifying questions already collected every decision. Re-presenting asks your human partner to approve their own answers and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
 | "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the brainstorm hands the design back. |
+| "The tests are green, so the feature works" | The suite proves the code does what the code says. A UI criterion is verified by opening it. That is what `verify` is for. |
+| "No verify recipe, so I'll just start the dev server myself and look" | A hand-started server holds the port after the run and makes the next one look broken. No `(ui)` criteria skips; a `(ui)` criterion with no recipe parks. |
+| "Verification failed but I can see the fix — I'll patch it here" | Controller fixes skip review. The fix round is a dispatch, and there is exactly one. |
+| "One criterion has no test, but everything that ran passed" | Not covered is not passed. An uncovered criterion is this stage failing to do its job, and it is weighted as a failure. |
+| "I'll snapshot the page to find the right selector" | The run wrote the component. Read it. A full-page dump costs more context than the whole stage budget. |
 | "The design has a gap — I'll present it and ask" | A gap is a missed clarifying question, and the questions are still open while the brainstorm runs. Ask it there. Once the brainstorm hands back, Phase 2 owns the run. |

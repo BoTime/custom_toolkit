@@ -13,6 +13,7 @@ const validConfig = () => ({
     spec: { model: "opus", effort: "high" },
     plan: { model: "opus", effort: "xhigh" },
     learnings: { model: "opus", effort: "high" },
+    verify: { model: "sonnet", effort: "high" },
     implement: { model: "sonnet", effort: "medium" },
     implement_complex: { model: "opus", effort: "high" },
     task_review: { model: "opus", effort: "high" },
@@ -28,10 +29,11 @@ const validConfig = () => ({
 });
 
 describe("ROLES and EFFORTS", () => {
-  it("lists exactly the ten roles", () => {
+  it("lists exactly the eleven roles", () => {
     expect(ROLES).toEqual([
-      "brainstorm", "spec", "plan", "learnings", "implement", "implement_complex",
-      "task_review", "re_review", "final_review", "fix_escalation",
+      "brainstorm", "spec", "plan", "learnings", "verify", "implement",
+      "implement_complex", "task_review", "re_review", "final_review",
+      "fix_escalation",
     ]);
   });
 
@@ -173,7 +175,7 @@ describe("mergeConfig", () => {
     expect(merged.worktree_dir).toBe(".claude/worktrees");
   });
 
-  it("overrides one role and preserves the other nine", () => {
+  it("overrides one role and preserves the other ten", () => {
     const merged = mergeConfig(validConfig(), {
       roles: { implement: { model: "opus" } },
     });
@@ -181,7 +183,7 @@ describe("mergeConfig", () => {
     // effort survives a partial role override
     expect(merged.roles.implement.effort).toBe("medium");
     expect(merged.roles.plan).toEqual({ model: "opus", effort: "xhigh" });
-    expect(Object.keys(merged.roles)).toHaveLength(10);
+    expect(Object.keys(merged.roles)).toHaveLength(11);
   });
 
   it("does not mutate the defaults", () => {
@@ -409,5 +411,57 @@ describe("shipped autopilot.default.json", () => {
 
   it("ships the learnings role", () => {
     expect(defaults.roles.learnings).toEqual({ model: "opus", effort: "high" });
+  });
+});
+
+describe("browser config is one policy knob and nothing else", () => {
+  // Every other browser fact — the dev command, the URL, the seed — is now
+  // derived per run into the verify recipe. A timeout cannot be: how long a
+  // human is willing to wait before calling a stack dead cannot be read off
+  // package.json.
+  it("exports no browser key list any more", async () => {
+    const mod = await import("./autopilot-config.mjs");
+    expect(mod.BROWSER_KEYS).toBeUndefined();
+    expect(mod.validateBrowserConfig).toBeUndefined();
+    expect(mod.browserConfigured).toBeUndefined();
+  });
+
+  it("ships a two-minute default, because a docker stack is not up in sixty seconds", () => {
+    const defaults = JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), "..", "autopilot.default.json"),
+        "utf8",
+      ),
+    );
+    expect(defaults.browser).toEqual({ ready_timeout_ms: 120000 });
+  });
+
+  it("keeps the default timeout when a project overrides nothing in browser", () => {
+    const merged = mergeConfig(
+      { ...validConfig(), browser: { ready_timeout_ms: 120000 } },
+      { test_command: "npm test" },
+    );
+    expect(merged.browser).toEqual({ ready_timeout_ms: 120000 });
+  });
+
+  it("lets a project raise the timeout", () => {
+    const merged = mergeConfig(
+      { ...validConfig(), browser: { ready_timeout_ms: 120000 } },
+      { browser: { ready_timeout_ms: 300000 } },
+    );
+    expect(merged.browser.ready_timeout_ms).toBe(300000);
+  });
+
+  it("rejects a non-positive timeout", () => {
+    const result = validateConfig({ ...validConfig(), browser: { ready_timeout_ms: 0 } }, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("browser.ready_timeout_ms: must be a positive integer");
+  });
+
+  // There is nothing to half-configure any more, so a browser block must never
+  // produce a warning — a backend repo would otherwise be nagged every run.
+  it("warns about nothing in the browser block", () => {
+    const result = validateConfig({ ...validConfig(), browser: { ready_timeout_ms: 120000 } }, {});
+    expect(result.warnings.join("\n")).not.toMatch(/browser/);
   });
 });

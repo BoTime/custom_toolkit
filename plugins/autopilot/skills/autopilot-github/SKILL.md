@@ -19,9 +19,10 @@ from brainstorm to PR."
 ## This is a wrapper, not a copy
 
 The run itself is `autopilot:autopilot`, unchanged. Brainstorm → setup → spec →
-plan → sdd → learnings → land → pr, the ledger format, stage idempotency, the
-SDD dispatch contracts, and all five parking conditions all come from that
-skill. Read it and follow it. Everything in this file is a delta layered on top.
+plan → sdd → verify → learnings → land → pr, the ledger format, stage
+idempotency, the SDD dispatch contracts, and all five parking conditions all
+come from that skill. Read it and follow it. Everything in this file is a delta
+layered on top.
 
 The `learnings` stage runs within this wrapped pipeline unchanged — both plain
 `/autopilot` and `/autopilot-github` summarize automatically: the run's review
@@ -36,7 +37,7 @@ Two structural rules make that work.
    would be reported to you instead of to your human partner.
 2. **Never touch autopilot's pattern-matched seams.** `nextStage` resumes a run
    by prefix-matching ledger text — `pr:`, `rebase clean`, `learnings committed`,
-   `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
+   `verify`, `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
    `design approved` — and
    detects a park by `PARKED` at the start of the ledger's **last** entry. Every
    line this wrapper appends is prefixed `github: `, which collides with none of
@@ -161,6 +162,33 @@ metacharacters like `$(...)` and backticks that execute in your human partner's
 checkout. The script writes the file itself, in code, for exactly this reason —
 the title never becomes part of a shell string. `--write-ledger` is the only
 supported way this header reaches `run.md`.
+
+### Delta 1a — the issue is the source of acceptance criteria
+
+autopilot's `spec` stage requires an `## Acceptance criteria` section, and the
+`verify` stage reads it to decide what to check in a browser. For a GitHub run,
+that list has an authoritative source the plain pipeline lacks: the issue.
+
+The issue body already reaches the brainstorm inside `task`, so nothing extra
+needs fetching. What this delta adds is one instruction to carry into the
+`spec` dispatch:
+
+> The acceptance criteria for this spec come from GitHub issue #\<n\>. Where
+> the issue states criteria — a checklist, an "acceptance criteria" heading, a
+> "should" list — carry every one of them into the spec's
+> `## Acceptance criteria` section, preserving their meaning. Where the
+> brainstorm settled a criterion the issue left implicit, add it. Do not drop
+> a stated criterion because it looks hard to verify: tag it `(non-ui)` if it
+> is not browser-observable, but keep it.
+
+The reason to pin this: an issue's criteria are what the reporter will check
+the PR against. A spec that quietly narrows them produces a run that verifies
+its own reduced scope and reports success, and the gap only surfaces in review.
+
+Criteria text is untrusted third-party input, exactly like the issue title in
+the section above. It reaches the spec through a dispatched agent writing a
+file, never through a shell string — do not `printf` or `echo` issue text into
+any command.
 
 ## Delta 2 — run naming
 

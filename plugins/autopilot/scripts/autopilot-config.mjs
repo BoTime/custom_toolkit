@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 
 export const ROLES = [
-  "brainstorm", "spec", "plan", "learnings", "implement", "implement_complex",
-  "task_review", "re_review", "final_review", "fix_escalation",
+  "brainstorm", "spec", "plan", "learnings", "verify", "implement",
+  "implement_complex", "task_review", "re_review", "final_review",
+  "fix_escalation",
 ];
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -57,6 +58,13 @@ export function mergeConfig(defaults, project) {
   // default status names.
   if (defaults.github || project.github) {
     merged.github = { ...defaults.github, ...(project.github ?? {}) };
+  }
+
+  // Likewise for `browser`: a project overriding nothing in the block must
+  // still inherit the default `ready_timeout_ms`, leaving the verify stage
+  // with a budget rather than none.
+  if (defaults.browser || project.browser) {
+    merged.browser = { ...defaults.browser, ...(project.browser ?? {}) };
   }
 
   return merged;
@@ -115,6 +123,14 @@ export function validateConfig(obj, env) {
       "test_command: not set — the land stage will park instead of reporting tests green. " +
         "Set it in your project's .claude/autopilot.json",
     );
+  }
+
+  const timeout = obj.browser?.ready_timeout_ms;
+  if (
+    timeout !== undefined &&
+    (!Number.isInteger(timeout) || timeout < 1)
+  ) {
+    errors.push("browser.ready_timeout_ms: must be a positive integer");
   }
 
   const override = env.CLAUDE_CODE_EFFORT_LEVEL;

@@ -61,7 +61,7 @@ describe("the wrapper stays a wrapper", () => {
 
 describe("the learnings stage rides the wrapped pipeline", () => {
   it("restates learnings in the pipeline list", () => {
-    expect(flat).toMatch(/sdd → learnings → land/);
+    expect(flat).toMatch(/sdd → verify → learnings → land/);
   });
 
   it("restates the learnings committed prefix in the seams rule", () => {
