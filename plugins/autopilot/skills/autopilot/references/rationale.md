@@ -217,3 +217,50 @@ The contract tests follow the same route. `scripts/skill-sections.mjs` resolves
 the reference files a section names before asserting on it, so a rule that
 moved out of `SKILL.md` is still proven to reach the dispatched agent — and a
 wrong path, a deleted fragment, or a dropped `cat` line now fails loudly.
+
+## The session cap
+
+A session re-reads its whole context every turn, so its cost grows with the
+square of its own length. Measured across the samba corpus (730 agents, 24,382
+turns, $1,233 of cache-read):
+
+| Session length | n | Avg ctx | $/turn | vs short |
+|---|---|---|---|---|
+| 2–50 turns | 621 | 58k | $0.024 | 1.0x |
+| 50–150 | 79 | 115k | $0.045 | 1.8x |
+| 150–400 | 26 | 185k | $0.073 | 3.0x |
+| 400+ | 4 | 322k | $0.097 | **4.0x** |
+
+58% of all cache-read spend sits in the 29 sessions past 150 turns — 4% of the
+agents. Simulated against those same per-turn traces, capping sessions at 100
+turns and resuming saves 30%, where doing the same work in 25% fewer turns
+saves 26% and shrinking every agent's fixed baseline by 25% saves 7.5%. Capping
+is the only lever that attacks the quadratic term rather than a linear
+coefficient, which is why the cap exists at all.
+
+**The saving is entirely a function of how much context crosses the boundary:**
+
+| carry | 8k | 20k | 40k | 60k |
+|---|---|---|---|---|
+| 100-turn cap | 30% | 21% | 6% | **−9%** |
+
+Past ~40k a cap costs more than it saves, because each handoff pays a fresh
+baseline for context it did not need. That is the whole reason `## Resume`
+states what a resumed session may read — the ledger and the paths it names,
+nothing else. A successor that re-reads the spec, the plan and the diff to get
+oriented has rebuilt exactly what the handoff shed, and turned a 30% saving
+into a loss. The rule looks like an arbitrary restriction and is in fact the
+only thing making the mechanism pay.
+
+Checking only at stage boundaries is not a simplification either. `nextStage`
+resolves a ledger to a stage, so stage granularity is the finest handoff the
+protocol can express; a session that stopped mid-`sdd` would hand its successor
+no way to pick up, and the stage would be redone.
+
+**The cap is cooperative.** Nothing in the harness stops a session at N turns —
+the controller has to yield on its own, which is precisely how the prose rule
+this replaces failed. The `check` in the `pr` stage is the enforcement: it
+cannot prevent an over-long session, but it makes the choice visible after the
+fact. It reports rather than parks because by then the work is already pushed,
+and the finding is about how the run was executed, not whether its output is
+sound.
