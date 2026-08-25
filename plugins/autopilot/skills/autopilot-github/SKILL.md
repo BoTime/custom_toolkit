@@ -20,7 +20,7 @@ from brainstorm to PR."
 
 The run itself is `autopilot:autopilot`, unchanged. Brainstorm → setup → spec →
 plan → sdd → verify → learnings → land → pr, the ledger format, stage
-idempotency, the SDD dispatch contracts, and all five parking conditions all
+idempotency, the SDD dispatch contracts, and all nine parking conditions all
 come from that skill. Read it and follow it. Everything in this file is a delta
 layered on top.
 
@@ -288,7 +288,7 @@ not only as the last entry.
 Anchor: **immediately before a `PARKED — <reason>` entry is appended.**
 
 Leave the card where it is (In Progress). The park hook adds **no new parking
-condition** — a run still parks for exactly autopilot's five existing reasons.
+condition** — a run still parks for exactly autopilot's nine existing reasons.
 The only new behavior is the comment.
 
 The order is fixed:
