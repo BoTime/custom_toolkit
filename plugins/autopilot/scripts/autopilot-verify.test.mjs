@@ -9,6 +9,10 @@ import {
   waitForServer,
   playwrightConfig,
   playwrightResolvable,
+  loadRecipe,
+  resolveBaseUrl,
+  teardown,
+  findingsLines,
 } from "./autopilot-verify.mjs";
 
 const SPEC = `# CSV export drops unicode — design
@@ -232,11 +236,15 @@ describe("playwrightConfig", () => {
 
 describe("EXIT", () => {
   // The stage branches on these: a failed criterion earns a fix round, a dead
-  // dev server does not. Collapsing them into "non-zero" loses that.
-  it("separates criterion failure from infrastructure failure", () => {
-    expect(EXIT.pass).toBe(0);
-    expect(new Set(Object.values(EXIT)).size).toBe(Object.keys(EXIT).length);
-    expect(EXIT.criteria_failed).not.toBe(EXIT.infrastructure);
+  // dev server does not, and a run with no (ui) criteria is neither.
+  it("maps every outcome to a distinct code", () => {
+    expect(EXIT).toEqual({
+      pass: 0,
+      criteria_failed: 1,
+      infrastructure: 2,
+      skipped: 3,
+      cannot_verify: 4,
+    });
   });
 });
 
@@ -256,5 +264,192 @@ describe("playwrightResolvable", () => {
   // produces a green nobody can reproduce.
   it("is false rather than throwing when the runner is absent", () => {
     expect(playwrightResolvable("/proj", fakeRequire(false))).toBe(false);
+  });
+});
+
+describe("loadRecipe", () => {
+  const reader = (files) => (p) => {
+    if (!(p in files)) throw new Error("ENOENT");
+    return files[p];
+  };
+  const full = JSON.stringify({
+    dev_command: "bash scripts/worktree-up.sh",
+    base_url_command: "grep '^WEB_ORIGIN=' apps/api/.env | cut -d= -f2-",
+    stop_command: "bash scripts/worktree-down.sh",
+    seed_command: "npm run db:seed:test",
+  });
+
+  it("reads the recipe the plan stage derived", () => {
+    const r = loadRecipe("/run/verify", reader({ "/run/verify/recipe.json": full }));
+    expect(r.ok).toBe(true);
+    expect(r.recipe.stop_command).toBe("bash scripts/worktree-down.sh");
+  });
+
+  // A missing recipe is a park, not a skip: the spec asked for browser
+  // verification and the stage cannot deliver it.
+  it("reports an absent recipe rather than throwing", () => {
+    const r = loadRecipe("/run/verify", reader({}));
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/recipe\.json/);
+  });
+
+  it("reports malformed JSON distinctly from an absent file", () => {
+    const r = loadRecipe("/run/verify", reader({ "/run/verify/recipe.json": "{oops" }));
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/not valid JSON/);
+  });
+
+  it("names the required keys the recipe left out", () => {
+    const r = loadRecipe(
+      "/run/verify",
+      reader({ "/run/verify/recipe.json": JSON.stringify({ dev_command: "x" }) }),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain("base_url_command");
+  });
+
+  it("treats stop_command and seed_command as optional", () => {
+    const r = loadRecipe(
+      "/run/verify",
+      reader({
+        "/run/verify/recipe.json": JSON.stringify({ dev_command: "x", base_url_command: "y" }),
+      }),
+    );
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("resolveBaseUrl", () => {
+  const deps = (overrides) => ({
+    intervalMs: 10,
+    sleep: async () => {},
+    now: () => 0,
+    devExitCode: () => null,
+    ...overrides,
+  });
+
+  it("trims the command's stdout into the base url", async () => {
+    const r = await resolveBaseUrl("print-url", "/wt", deps({
+      runCommand: () => ({ code: 0, stdout: "http://localhost:4310\n", stderr: "" }),
+    }));
+    expect(r).toEqual({ ok: true, url: "http://localhost:4310" });
+  });
+
+  // The motivating case: a worktree-up script assigns ports late, so the
+  // command answers nothing until setup finishes.
+  it("retries until the command yields a url", async () => {
+    let calls = 0;
+    const r = await resolveBaseUrl("print-url", "/wt", deps({
+      timeoutMs: 1000,
+      runCommand: () => (++calls < 3
+        ? { code: 1, stdout: "", stderr: "no such file" }
+        : { code: 0, stdout: "http://localhost:4310", stderr: "" }),
+    }));
+    expect(r.ok).toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  // A clean exit means setup finished, not that the server died.
+  it("keeps polling after the dev command exits zero", async () => {
+    let calls = 0;
+    const r = await resolveBaseUrl("print-url", "/wt", deps({
+      timeoutMs: 1000,
+      devExitCode: () => 0,
+      runCommand: () => (++calls < 2
+        ? { code: 1, stdout: "", stderr: "" }
+        : { code: 0, stdout: "http://x", stderr: "" }),
+    }));
+    expect(r.ok).toBe(true);
+  });
+
+  it("gives up immediately when the dev command exits non-zero", async () => {
+    const r = await resolveBaseUrl("print-url", "/wt", deps({
+      timeoutMs: 1000,
+      devExitCode: () => 3,
+      runCommand: () => ({ code: 0, stdout: "http://x", stderr: "" }),
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/exited 3/);
+  });
+
+  it("gives up at the deadline", async () => {
+    let clock = 0;
+    const r = await resolveBaseUrl("print-url", "/wt", deps({
+      timeoutMs: 100,
+      sleep: async () => { clock += 50; },
+      now: () => clock,
+      runCommand: () => ({ code: 1, stdout: "", stderr: "still booting" }),
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/no url within 100ms/);
+  });
+});
+
+describe("teardown", () => {
+  // Without this, a script that starts docker containers and backgrounds its
+  // app processes leaks the whole stack: the child autopilot holds has already
+  // exited, so there is nothing left to signal.
+  it("prefers the recipe's stop command", () => {
+    const calls = [];
+    const how = teardown(
+      { child: { pid: 42 }, stopCommand: "bash scripts/worktree-down.sh", cwd: "/wt" },
+      (cmd, cwd) => { calls.push([cmd, cwd]); return { code: 0, stdout: "", stderr: "" }; },
+      () => calls.push(["kill"]),
+    );
+    expect(how).toBe("stop_command");
+    expect(calls).toEqual([["bash scripts/worktree-down.sh", "/wt"]]);
+  });
+
+  // Still correct for the blocking-server case: a dev server that spawns a
+  // child compiler must be signalled as a group or the port stays held.
+  it("falls back to killing the process group when there is no stop command", () => {
+    const killed = [];
+    const how = teardown({ child: { pid: 42 }, cwd: "/wt" }, () => {
+      throw new Error("must not run a command");
+    }, (child) => killed.push(child.pid));
+    expect(how).toBe("process-group");
+    expect(killed).toEqual([42]);
+  });
+});
+
+describe("findingsLines", () => {
+  const rows = [
+    { id: "AC1", text: "login prompt", status: "pass", message: null },
+    { id: "AC3", text: "spinner", status: "fail", message: "expected visible" },
+    { id: "AC4", text: "toast", status: "missing", message: "no test covered this criterion" },
+  ];
+
+  it("emits one seven-field line per unmet criterion, with the task sentinel", () => {
+    const lines = findingsLines(rows, { round: 1 });
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(Object.keys(line).sort()).toEqual(
+        ["detail", "pattern", "round", "severity", "stage_at_fault", "task", "verdict"],
+      );
+      expect(line.task).toBe(0);
+      expect(line.round).toBe(1);
+      expect(line.verdict).toBe("CONFIRMED");
+    }
+  });
+
+  // The contract is emphatic that stage_at_fault names the stage that produced
+  // the bad input, never the stage that surfaced it — so no "verify" value.
+  it("uses only the four existing stage_at_fault values", () => {
+    for (const line of findingsLines(rows, {})) {
+      expect(["brief", "plan", "spec", "implementation"]).toContain(line.stage_at_fault);
+    }
+  });
+
+  it("names the criterion in the detail so a cluster stays readable", () => {
+    const [failed] = findingsLines(rows, {});
+    expect(failed.detail).toContain("AC3");
+    expect(failed.detail).toContain("expected visible");
+  });
+
+  // Absence of evidence: without the clean line, a run with no findings is
+  // indistinguishable from a run whose findings were never written.
+  it("emits one clean line when every criterion passed", () => {
+    const lines = findingsLines([rows[0]], {});
+    expect(lines).toEqual([{ task: 0, clean: true }]);
   });
 });

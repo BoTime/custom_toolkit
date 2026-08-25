@@ -1,21 +1,27 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, appendFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve as resolvePath } from "node:path";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { loadConfig, validateBrowserConfig, browserConfigured } from "./autopilot-config.mjs";
+import { loadConfig } from "./autopilot-config.mjs";
 
 /**
  * Exit codes, because the verify stage branches on them and "non-zero" is not
- * enough: a failed criterion earns a fix round, a dead dev server does not.
+ * enough: a failed criterion earns a fix round, a dead dev server does not,
+ * and a repo with no `(ui)` criteria is not failing at all.
+ *
+ * There is nothing to configure any more, so there is no "half-configured"
+ * state. `cannot_verify` is where a missing recipe and a missing
+ * `@playwright/test` land: the spec asked for browser verification and this
+ * stage could not deliver it, which must never report as success.
  */
 export const EXIT = {
   pass: 0,
   criteria_failed: 1,
   infrastructure: 2,
-  unconfigured: 3,
-  half_configured: 4,
+  skipped: 3,
+  cannot_verify: 4,
 };
 
 const HEADING = /^##\s+Acceptance criteria\s*$/im;
@@ -153,7 +159,7 @@ export function formatVerifySection(rows, { artifactsDir, skipped } = {}) {
 /** Poll until the dev server answers or the budget runs out. */
 export async function waitForServer(
   url,
-  { timeoutMs = 60000, intervalMs = 500 } = {},
+  { timeoutMs = 120000, intervalMs = 500 } = {},
   probe = (u) => fetch(u, { redirect: "manual" }).then(() => true, () => false),
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   now = () => Date.now(),
@@ -239,20 +245,101 @@ function run(command, cwd) {
   return { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+/** The recipe keys without which nothing can be started or reached. */
+export const RECIPE_KEYS = ["dev_command", "base_url_command"];
+
 /**
- * Start the dev server in its own process group so the whole tree can be
- * signalled at once. A dev server that spawns a child compiler is the norm,
- * and killing only the parent leaves the port held — the next run then times
- * out against the previous run's stale server and reports infrastructure
- * failure on a healthy branch.
+ * Read the per-run recipe the `plan` stage derived.
+ *
+ * Derived rather than configured, and rederived every run: a committed recipe
+ * is a second copy of the project's dev setup that drifts silently the moment
+ * someone changes a port or renames a script, because nothing runs it except
+ * autopilot.
  */
-function startServer(command, cwd) {
-  const child = spawn(command, { cwd, shell: true, detached: true, stdio: "ignore" });
-  child.unref();
-  return child;
+export function loadRecipe(runDir, readFile = (p) => readFileSync(p, "utf8")) {
+  const path = join(runDir, "recipe.json");
+  let raw;
+  try {
+    raw = readFile(path);
+  } catch {
+    return {
+      ok: false,
+      reason:
+        `no verify recipe at ${path} — the plan stage derives it from the ` +
+        "project's own dev setup, so a run that reached here without one " +
+        "cannot open a browser",
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, reason: `${path} is not valid JSON` };
+  }
+  const missing = RECIPE_KEYS.filter((key) => !parsed?.[key]);
+  if (missing.length > 0) {
+    return { ok: false, reason: `${path} is missing ${missing.join(", ")}` };
+  }
+  return { ok: true, recipe: parsed };
 }
 
-function stopServer(child) {
+/**
+ * Resolve the base URL by running the recipe's command in the worktree.
+ *
+ * The URL is never written down. A worktree-up script derives its ports from
+ * the worktree name and reassigns them when a block is occupied, so a static
+ * base_url is not merely inconvenient — it is wrong on the second concurrent
+ * run.
+ *
+ * Polling, rather than one shot, is what lets the command run "after
+ * dev_command" for both shapes of dev command: a setup script that assigns
+ * ports and exits, and a blocking server that never exits at all.
+ */
+export async function resolveBaseUrl(command, cwd, {
+  timeoutMs = 120000,
+  intervalMs = 500,
+  devExitCode = () => null,
+  runCommand = run,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  now = () => Date.now(),
+} = {}) {
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    // A zero exit means setup finished, not that the server died — only a
+    // non-zero exit is a failure. Whether the server is actually up is
+    // waitForServer's question, not this one's.
+    const exited = devExitCode();
+    if (exited !== null && exited !== 0) {
+      return { ok: false, reason: `dev command exited ${exited} before a base url could be resolved` };
+    }
+    const attempt = runCommand(command, cwd);
+    const url = (attempt.stdout ?? "").trim();
+    if (attempt.code === 0 && url) return { ok: true, url };
+    if (now() >= deadline) {
+      const why = (attempt.stderr ?? "").trim() || "empty stdout";
+      return { ok: false, reason: `base_url_command produced no url within ${timeoutMs}ms: ${why}` };
+    }
+    await sleep(intervalMs);
+  }
+}
+
+/**
+ * Start the dev command in its own process group so the whole tree can be
+ * signalled at once, and remember how it exited.
+ *
+ * The exit code matters only when it is non-zero: the common project script
+ * starts containers, backgrounds its app processes, prints a summary and
+ * returns 0, which the old rule read as a crash on a perfectly healthy stack.
+ */
+export function startDevCommand(command, cwd, spawnFn = spawn) {
+  const child = spawnFn(command, { cwd, shell: true, detached: true, stdio: "ignore" });
+  const state = { code: null };
+  child.on?.("exit", (code, signal) => { state.code = code ?? (signal ? 1 : 0); });
+  child.unref?.();
+  return { child, exitCode: () => state.code };
+}
+
+function killGroup(child) {
   if (!child?.pid) return;
   for (const signal of ["SIGTERM", "SIGKILL"]) {
     try {
@@ -264,20 +351,78 @@ function stopServer(child) {
   }
 }
 
+/**
+ * Tear the stack down, preferring the recipe's own stop command.
+ *
+ * The process-group kill is the fallback for the blocking-server case, where
+ * it remains correct. It is useless for a setup script: the child autopilot
+ * holds has already exited, so signalling it leaves every container running
+ * long after the run.
+ */
+export function teardown({ child, stopCommand, cwd }, runCommand = run, kill = killGroup) {
+  if (stopCommand) {
+    runCommand(stopCommand, cwd);
+    return "stop_command";
+  }
+  kill(child);
+  return "process-group";
+}
+
+/**
+ * One finding line per unmet criterion, under the existing seven-field
+ * contract — this stage is a second producer for it, not a new schema.
+ *
+ * `task: 0` is the sentinel for "not a task": verify is not a numbered SDD
+ * task, but the field is required and a nullable variant would fork the
+ * contract for one producer. `stage_at_fault` stays inside the existing four
+ * values: it names the stage that produced the bad input, never the stage
+ * that surfaced it.
+ */
+export function findingsLines(rows, { round = 1 } = {}) {
+  const unmet = rows.filter((r) => r.status !== "pass");
+  if (unmet.length === 0) return [{ task: 0, clean: true }];
+  return unmet.map((row) => ({
+    task: 0,
+    round,
+    severity: "major",
+    stage_at_fault: "implementation",
+    pattern: row.status === "missing"
+      ? "ui criterion had no browser test"
+      : "ui criterion failed in browser",
+    detail: `${row.id}: ${row.text} — ${row.message ?? "no detail"}`,
+    verdict: "CONFIRMED",
+  }));
+}
+
+/** Append to the run's corpus, which sits one level above the verify dir. */
+export function appendFindings(runDir, lines, append = appendFileSync) {
+  const path = join(runDir, "..", "findings.jsonl");
+  append(path, lines.map((line) => `${JSON.stringify(line)}\n`).join(""), "utf8");
+  return path;
+}
+
 export async function verify({ configPath, runDir, cwd, specPath }) {
   const { config } = loadConfig(configPath);
+  const readyTimeoutMs = config.browser?.ready_timeout_ms ?? 120000;
 
-  if (!browserConfigured(config)) {
-    return { code: EXIT.unconfigured, message: "browser not configured in .claude/autopilot.json" };
+  // Writing a `(ui)` acceptance criterion is what turns this stage on. There
+  // is no flag and nothing to configure, so the spec is the only gate.
+  const parsed = specPath
+    ? parseCriteria(readFileSync(specPath, "utf8"))
+    : { ok: false, criteria: [], reason: "no spec path was given" };
+  if (!parsed.ok) return { code: EXIT.cannot_verify, message: parsed.reason };
+
+  const ui = uiCriteria(parsed.criteria);
+  if (ui.length === 0) {
+    return { code: EXIT.skipped, message: "no (ui) acceptance criteria in the spec" };
   }
-  const missing = validateBrowserConfig(config);
-  if (missing.length > 0) {
-    return { code: EXIT.half_configured, message: `browser config incomplete: ${missing.join(", ")}` };
-  }
+
+  const loaded = loadRecipe(runDir);
+  if (!loaded.ok) return { code: EXIT.cannot_verify, message: loaded.reason };
 
   if (!playwrightResolvable(cwd)) {
     return {
-      code: EXIT.infrastructure,
+      code: EXIT.cannot_verify,
       message:
         "@playwright/test is not resolvable from the project — add it as a " +
         "devDependency and install browsers with `npx playwright install " +
@@ -286,33 +431,44 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
     };
   }
 
-  const { dev_command, base_url, ready_timeout_ms = 60000, seed } = config.browser;
+  const { dev_command, base_url_command, stop_command, seed_command } = loaded.recipe;
   const specDir = join(runDir, "specs");
   const artifactsDir = join(runDir, "artifacts");
   mkdirSync(specDir, { recursive: true });
   mkdirSync(artifactsDir, { recursive: true });
   linkModules(runDir, cwd);
 
-  const configFile = join(runDir, "playwright.config.cjs");
-  writeFileSync(configFile, playwrightConfig({ baseURL: base_url, specDir, artifactsDir }), "utf8");
-
-  if (seed) {
-    const seeded = run(seed, cwd);
+  if (seed_command) {
+    const seeded = run(seed_command, cwd);
     if (seeded.code !== 0) {
       return { code: EXIT.infrastructure, message: `seed command failed: ${seeded.stderr.trim()}` };
     }
   }
 
-  let server;
+  let started;
   try {
-    server = startServer(dev_command, cwd);
-    const { ready } = await waitForServer(base_url, { timeoutMs: ready_timeout_ms });
+    started = startDevCommand(dev_command, cwd);
+
+    const resolved = await resolveBaseUrl(base_url_command, cwd, {
+      timeoutMs: readyTimeoutMs,
+      devExitCode: started.exitCode,
+    });
+    if (!resolved.ok) return { code: EXIT.infrastructure, message: resolved.reason };
+
+    const { ready } = await waitForServer(resolved.url, { timeoutMs: readyTimeoutMs });
     if (!ready) {
       return {
         code: EXIT.infrastructure,
-        message: `dev server did not answer ${base_url} within ${ready_timeout_ms}ms`,
+        message: `dev server did not answer ${resolved.url} within ${readyTimeoutMs}ms`,
       };
     }
+
+    const configFile = join(runDir, "playwright.config.cjs");
+    writeFileSync(
+      configFile,
+      playwrightConfig({ baseURL: resolved.url, specDir, artifactsDir }),
+      "utf8",
+    );
 
     const tests = run(`npx playwright test --config ${JSON.stringify(configFile)}`, cwd);
     const resultsPath = join(artifactsDir, "results.json");
@@ -323,13 +479,12 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
       };
     }
     const summary = summarize(JSON.parse(readFileSync(resultsPath, "utf8")));
-    const parsed = specPath ? parseCriteria(readFileSync(specPath, "utf8")) : { criteria: [] };
 
     // Playwright exits non-zero and still writes a report when it collects
     // nothing — a spec that failed to import looks identical to a feature
     // nobody tested. Treat it as infrastructure so it parks instead of
     // sending an implementer to fix code that was never exercised.
-    if (summary.total === 0 && uiCriteria(parsed.criteria).length > 0) {
+    if (summary.total === 0) {
       return {
         code: EXIT.infrastructure,
         message: `playwright collected no tests from ${specDir}: ${
@@ -340,12 +495,13 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
 
     const rows = attribute(parsed.criteria, summary);
     writeFileSync(join(runDir, "pr-section.md"), formatVerifySection(rows, { artifactsDir }), "utf8");
+    appendFindings(runDir, findingsLines(rows, { round: 1 }));
 
     // A criterion with no test is a gap in this stage, not a pass, so it is
     // failure-weighted alongside a red assertion.
     const unmet = rows.filter((r) => r.status !== "pass");
     return {
-      code: summary.failed > 0 || unmet.length > 0 ? EXIT.criteria_failed : EXIT.pass,
+      code: unmet.length > 0 ? EXIT.criteria_failed : EXIT.pass,
       message:
         `${rows.length - unmet.length}/${rows.length} ui criteria passed ` +
         `(${summary.passed}/${summary.total} tests)` +
@@ -355,7 +511,7 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
       artifactsDir,
     };
   } finally {
-    stopServer(server);
+    if (started) teardown({ child: started.child, stopCommand: stop_command, cwd });
   }
 }
 
@@ -384,7 +540,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (command === "skip") {
     const runDir = flag("run-dir");
-    const reason = flag("reason", "no ui criteria");
+    const reason = flag("reason", "no ui acceptance criteria");
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, "pr-section.md"), formatVerifySection([], { skipped: reason }), "utf8");
     console.log(`status: skipped (${reason})`);
