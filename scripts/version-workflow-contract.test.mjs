@@ -88,6 +88,12 @@ describe("version workflow contract", () => {
     expect(job).toContain("scripts/bump-version.mjs");
   });
 
+  it("pushes the release commit back to main", () => {
+    // Without this the job can commit locally and still never publish the
+    // bump — same silent-failure class as a missing bump-script invocation.
+    expect(job).toContain("git push origin HEAD:main");
+  });
+
   it("only ever runs on a push to main", () => {
     expect(guard).toContain("github.event_name == 'push'");
     expect(guard).toContain("refs/heads/main");

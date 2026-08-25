@@ -145,9 +145,6 @@ describe("plugin packaging", () => {
   const pluginJson = JSON.parse(
     readFileSync(join(HERE, "..", ".claude-plugin", "plugin.json"), "utf8"),
   );
-  const marketplace = JSON.parse(
-    readFileSync(join(HERE, "..", "..", "..", ".claude-plugin", "marketplace.json"), "utf8"),
-  );
 
   it("registers the commands directory so the new command loads", () => {
     expect(pluginJson.commands).toEqual(["./commands/"]);
