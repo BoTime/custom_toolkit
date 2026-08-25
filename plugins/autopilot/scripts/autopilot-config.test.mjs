@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  ROLES, EFFORTS, GITHUB_KEYS,
+  ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES,
   validateConfig, validateGithubConfig, mergeConfig, loadConfig,
 } from "./autopilot-config.mjs";
 import { readFileSync } from "node:fs";
@@ -463,5 +463,113 @@ describe("browser config is one policy knob and nothing else", () => {
   it("warns about nothing in the browser block", () => {
     const result = validateConfig({ ...validConfig(), browser: { ready_timeout_ms: 120000 } }, {});
     expect(result.warnings.join("\n")).not.toMatch(/browser/);
+  });
+});
+
+// `minimalism` is a nested optional block: merged per key like `browser`, kept
+// out of TOP_LEVEL like `github`. Both properties have to hold at once — a
+// project supplying a partial block must still inherit the default mode, and a
+// project with no block at all (every config that predates the key) must keep
+// loading exactly as before.
+
+describe("minimalism config", () => {
+  const DEFAULTS = "/plugin/autopilot.default.json";
+  const PROJECT = "/proj/.claude/autopilot.json";
+  const reader = (files) => (p) => {
+    if (!(p in files)) throw new Error("ENOENT");
+    return files[p];
+  };
+  const withMinimalism = () => ({ ...validConfig(), minimalism: { mode: "off" } });
+
+  it("lists exactly the three modes", () => {
+    expect(MINIMALISM_MODES).toEqual(["off", "lite", "full"]);
+  });
+
+  it("ships mode off in autopilot.default.json", () => {
+    const defaults = JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), "..", "autopilot.default.json"),
+        "utf8",
+      ),
+    );
+    expect(defaults.minimalism).toEqual({ mode: "off" });
+  });
+
+  it("returns mode off when the project has no minimalism key", () => {
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(withMinimalism()) });
+    const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.minimalism.mode).toBe("off");
+  });
+
+  it("loads lite from the project config", () => {
+    const readFile = reader({
+      [DEFAULTS]: JSON.stringify(withMinimalism()),
+      [PROJECT]: JSON.stringify({ minimalism: { mode: "lite" } }),
+    });
+    const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.minimalism.mode).toBe("lite");
+  });
+
+  it("loads full from the project config", () => {
+    const readFile = reader({
+      [DEFAULTS]: JSON.stringify(withMinimalism()),
+      [PROJECT]: JSON.stringify({ minimalism: { mode: "full" } }),
+    });
+    const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.minimalism.mode).toBe("full");
+  });
+
+  it("keeps the default mode when a project supplies a minimalism block without one", () => {
+    // Without the per-key merge the shallow top-level spread replaces the whole
+    // block and the mode disappears, so this fails on the current code.
+    const merged = mergeConfig(withMinimalism(), { minimalism: {} });
+    expect(merged.minimalism).toEqual({ mode: "off" });
+  });
+
+  it("does not mutate the defaults' minimalism block", () => {
+    const defaults = withMinimalism();
+    mergeConfig(defaults, { minimalism: { mode: "full" } });
+    expect(defaults.minimalism).toEqual({ mode: "off" });
+  });
+
+  it("leaves minimalism absent when neither layer supplies one", () => {
+    const merged = mergeConfig(validConfig(), { base_ref: "origin/trunk" });
+    expect(merged.minimalism).toBeUndefined();
+  });
+
+  it("rejects an unknown mode with an error naming minimalism.mode", () => {
+    const result = validateConfig(
+      { ...validConfig(), minimalism: { mode: "ultra" } },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      'minimalism.mode: "ultra" is not one of off, lite, full',
+    );
+  });
+
+  it("surfaces an unknown mode as a load failure, not a silent fallback", () => {
+    const readFile = reader({
+      [DEFAULTS]: JSON.stringify(withMinimalism()),
+      [PROJECT]: JSON.stringify({ minimalism: { mode: "ultra" } }),
+    });
+    expect(() => loadConfig(PROJECT, {}, readFile, DEFAULTS)).toThrow(
+      /minimalism\.mode/,
+    );
+  });
+
+  it("neither errors nor warns when no layer supplies a minimalism block", () => {
+    const result = validateConfig(validConfig(), {});
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.join("\n")).not.toMatch(/minimalism/);
+  });
+
+  it("keeps loading a config that predates the key, so minimalism is not a hard requirement", () => {
+    // The TOP_LEVEL guard: adding `minimalism` there would make this throw.
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
+    const { config, warnings } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.minimalism).toBeUndefined();
+    expect(warnings.join("\n")).not.toMatch(/minimalism/);
   });
 });

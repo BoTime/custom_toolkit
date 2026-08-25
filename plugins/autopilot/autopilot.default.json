@@ -19,6 +19,9 @@
   "browser": {
     "ready_timeout_ms": 120000
   },
+  "minimalism": {
+    "mode": "off"
+  },
   "github": {
     "status_field": "Status",
     "status_ready": "Ready",
