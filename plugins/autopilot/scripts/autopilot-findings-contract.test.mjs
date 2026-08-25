@@ -13,31 +13,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { STAGES } from "./autopilot-findings.mjs";
+import { readSkill, sectionOf, unwrap } from "./skill-sections.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
 
-// SKILL.md is hard-wrapped prose, so a pinned phrase routinely straddles a
-// newline. Collapse whitespace before matching; otherwise a reflow that changes
-// no words at all would fail these tests.
-const unwrap = (s) => s.replace(/\s+/g, " ");
-
-/**
- * The `### \`sdd\`` section: from its heading to the next heading at the same
- * level or shallower. Anchored at line starts for the same reasons as
- * autopilot-sdd-contract.test.mjs — a rule outside this section never reaches
- * the dispatched agent.
- */
-function sddSection(markdown) {
-  const startMatch = /^### `sdd`.*$/m.exec(markdown);
-  if (!startMatch) throw new Error("SKILL.md has no `### \\`sdd\\`` section");
-  const rest = markdown.slice(startMatch.index);
-  const endMatch = /\n#{1,3} .*$/m.exec(rest.slice(startMatch[0].length));
-  return endMatch ? rest.slice(0, startMatch[0].length + endMatch.index) : rest;
-}
-
-const skill = readFileSync(SKILL_PATH, "utf8");
-const section = unwrap(sddSection(skill));
+const skill = readSkill();
+// Resolves the `references/dispatch/*.md` fragments the section names — the
+// contract reaches the dispatched agent by `cat` now, and this follows it.
+const section = unwrap(sectionOf(skill, "sdd"));
 
 describe("sdd findings-capture contract", () => {
   it("names the corpus file and its main-checkout placement", () => {

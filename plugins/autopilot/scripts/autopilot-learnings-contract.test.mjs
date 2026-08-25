@@ -10,34 +10,14 @@
 // the right sections. It matches on phrases, not full sentences, so ordinary
 // editing does not break it but removal does.
 
+// `stageSection` resolves the `references/dispatch/*.md` fragments a stage
+// names, inlining each where it is named — the plan stage's learnings
+// instruction reaches its agent by `cat` now, and this follows that route.
+
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { readSkill, sectionOf as stageSection, unwrap } from "./skill-sections.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
-
-// SKILL.md is hard-wrapped prose, so a pinned phrase routinely straddles a
-// newline. Collapse whitespace before matching; otherwise a reflow that changes
-// no words at all would fail these tests.
-const unwrap = (s) => s.replace(/\s+/g, " ");
-
-/**
- * A `### \`<name>\`` stage section: from its heading line to the next heading
- * at the same level or shallower. Anchored so a rule outside the section never
- * satisfies an assertion that is supposed to prove it lives inside it.
- */
-function stageSection(markdown, name) {
-  const heading = `### \`${name}\``;
-  const start = markdown.indexOf(heading);
-  if (start === -1) throw new Error(`SKILL.md has no \`${heading}\` section`);
-  const rest = markdown.slice(start + heading.length);
-  const end = /\n#{1,3} /.exec(rest);
-  return end ? rest.slice(0, end.index) : rest;
-}
-
-const skill = readFileSync(SKILL_PATH, "utf8");
+const skill = readSkill();
 
 describe("learnings dispatch prompt", () => {
   const sectionText = unwrap(stageSection(skill, "learnings"));
