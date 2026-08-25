@@ -10,17 +10,21 @@
 // the right sections. It matches on phrases, not full sentences, so ordinary
 // editing does not break it but removal does.
 
-// `stageSection` resolves the `references/dispatch/*.md` fragments a stage
-// names, inlining each where it is named — the plan stage's learnings
-// instruction reaches its agent by `cat` now, and this follows that route.
+// `composeStage` builds a stage's subagent definition out of the real body
+// template and fragments, exactly as `autopilot-dispatch.mjs` does for a run —
+// the plan stage's learnings instruction reaches its agent that way now, and
+// this follows that route. The ledger prose the templates deliberately do not
+// carry stays pinned against SKILL.md's section.
 
 import { describe, it, expect } from "vitest";
 import { readSkill, sectionOf as stageSection, unwrap } from "./skill-sections.mjs";
+import { composeStage } from "./dispatch-fixture.mjs";
 
 const skill = readSkill();
 
 describe("learnings dispatch prompt", () => {
-  const sectionText = unwrap(stageSection(skill, "learnings"));
+  const sectionText = unwrap(composeStage("learnings"));
+  const ledgerText = unwrap(stageSection(skill, "learnings"));
 
   it("names the corpus file and its main-checkout placement", () => {
     expect(sectionText).toContain("findings.jsonl");
@@ -43,17 +47,21 @@ describe("learnings dispatch prompt", () => {
   });
 
   it("keeps the learnings stage inside its own section, not merely in the file", () => {
-    expect(sectionText).toMatch(/learnings committed/i);
+    // Orchestrator-facing: the ledger line is what `nextStage` matches, and it
+    // is deliberately absent from the dispatched agent's definition.
+    expect(ledgerText).toMatch(/learnings committed/i);
   });
 
   it("records the non-parking failure mode", () => {
-    expect(sectionText).toMatch(/does not park/i);
-    expect(sectionText).toContain("learnings failed — <reason>");
+    // Also orchestrator-facing — the agent is never told what its own failure
+    // does to the run.
+    expect(ledgerText).toMatch(/does not park/i);
+    expect(ledgerText).toContain("learnings failed — <reason>");
   });
 });
 
 describe("plan dispatch prompt reads the learnings doc", () => {
-  const planText = unwrap(stageSection(skill, "plan"));
+  const planText = unwrap(composeStage("plan"));
 
   it("instructs the plan agent to read the learnings doc", () => {
     expect(planText).toContain("docs/autopilot/learnings.md");

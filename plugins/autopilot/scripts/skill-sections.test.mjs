@@ -24,6 +24,8 @@ import {
   topSection,
   between,
 } from "./skill-sections.mjs";
+import { STAGES } from "./autopilot-dispatch.mjs";
+import { defaultConfig } from "./dispatch-fixture.mjs";
 
 
 describe("referencedFiles", () => {
@@ -225,14 +227,28 @@ describe("the real skill's references resolve", () => {
     expect(() => resolveReferences(skill)).not.toThrow();
   });
 
-  it("every fragment on disk is named by the skill or by another reference", () => {
+  it("every fragment on disk is declared by a STAGES row", () => {
     // An orphan fragment is a contract nobody dispatches — it reads as live
-    // documentation while reaching no agent at all.
-    const resolved = resolveReferences(skill);
+    // documentation while reaching no agent at all. SKILL.md no longer names
+    // these files; `STAGES` does, so that is what the check follows.
+    const declared = new Set();
+    for (const [, entry] of Object.entries(STAGES)) {
+      declared.add(entry.body);
+      // Both minimalism modes and both learnings branches, so a fragment
+      // reachable only under one setting is not reported as an orphan.
+      for (const mode of ["off", "lite", "full"]) {
+        for (const has of [true, false]) {
+          const config = defaultConfig({ minimalism: { mode } });
+          for (const f of entry.fragments({ config, worktreeHas: () => has })) {
+            if (typeof f === "string") declared.add(f);
+          }
+        }
+      }
+    }
     const dispatchDir = join(SKILL_DIR, "references", "dispatch");
     const orphans = readdirSync(dispatchDir)
       .filter((f) => f.endsWith(".md"))
-      .filter((f) => !resolved.includes(`references/dispatch/${f}`));
+      .filter((f) => !declared.has(f));
     expect(orphans).toEqual([]);
   });
 

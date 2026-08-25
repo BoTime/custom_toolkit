@@ -1,52 +1,39 @@
-// SKILL.md carries two minimalism blocks: a decomposition ladder in the `plan`
-// section and a fourth contract in the `sdd` section. Both are prose, so
-// nothing else fails if they are deleted, reworded past recognition, or moved
-// out of the section where a dispatched agent would actually read them.
+// Two minimalism blocks reach dispatched agents: a decomposition ladder the
+// `plan` dispatch carries and a fourth contract the `sdd` dispatch carries.
+// Both are prose, so nothing else fails if they are deleted, reworded past
+// recognition, or dropped from the stage whose agent would actually read them.
 //
-// This test matches load-bearing phrases, not full sentences, so ordinary
-// editing does not break it but removal does. Every assertion is scoped to a
-// sub-slice of its section rather than the section as a whole: `implement`,
-// `implement_complex`, `task_review`, `re_review` and `final_review` all
-// already appear in the `sdd` model-mapping contract, so a section-wide
-// `toContain` would have passed before this feature existed.
+// This test composes each stage the way `autopilot-dispatch.mjs` does, at
+// `minimalism.mode` `full`, and asserts on what the dispatch actually carries.
+// The mode gating itself needs no slicing any more: at mode `off` the composed
+// definition carries no ladder at all, which is a stronger pin than prose
+// saying so. What remains in SKILL.md — the sentence naming the two modes that
+// emit — is asserted against SKILL.md.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readSkill, sectionOf as section } from "./skill-sections.mjs";
+import { composeStage } from "./dispatch-fixture.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const README_PATH = join(HERE, "..", "..", "..", "README.md");
 
-/**
- * The minimalism contract the `sdd` dispatch carries, and nothing before it.
- *
- * `section` resolves the `references/dispatch/*.md` fragments the stage names,
- * inlining each where it is named — so the gating paragraph in SKILL.md and the
- * ladder fragments it `cat`s land in the order the dispatch assembles them, and
- * this slice sees both.
- */
-function minimalismContract(markdown) {
-  const sdd = section(markdown, "sdd");
-  const start = /minimalism contract/i.exec(sdd);
-  if (!start) throw new Error("the sdd section carries no minimalism contract");
-  const rest = sdd.slice(start.index);
-  const end = /\nAnswer these gates/.exec(rest);
-  return end ? rest.slice(0, end.index) : rest;
-}
-
 describe("sdd minimalism contract", () => {
-  const contract = minimalismContract(readSkill());
+  const contract = composeStage("sdd", { minimalism: { mode: "full" } });
 
-  it("emits nothing at all when the mode is off", () => {
-    expect(contract).toContain("minimalism.mode");
-    expect(contract).toMatch(/include nothing/i);
+  it("emits no contract at all when the mode is off", () => {
+    const off = composeStage("sdd", { minimalism: { mode: "off" } });
+    expect(off).not.toMatch(/implementer dispatches only/i);
+    expect(off).not.toMatch(/the code you never wrote/i);
   });
 
   it("grades the two modes that do emit", () => {
-    expect(contract).toMatch(/`lite`/);
-    expect(contract).toMatch(/`full`/);
+    // Orchestrator-facing: the mode gate is SKILL.md's, not the agent's.
+    const sdd = section(readSkill(), "sdd");
+    expect(sdd).toMatch(/`lite`/);
+    expect(sdd).toMatch(/`full`/);
   });
 
   it("scopes the contract to implementer dispatches only", () => {
@@ -93,29 +80,19 @@ describe("sdd minimalism contract", () => {
   });
 });
 
-/** The minimalism ladder inside the `plan` section, and nothing before it. */
-function planLadder(markdown) {
-  const plan = section(markdown, "plan");
-  const start = /minimalism ladder/i.exec(plan);
-  if (!start) throw new Error("the plan section carries no minimalism ladder");
-  const rest = plan.slice(start.index);
-  const end = /\nThe dispatch prompt also carries a learnings instruction/.exec(rest);
-  return end ? rest.slice(0, end.index) : rest;
-}
-
 describe("plan minimalism ladder", () => {
-  const skill = readSkill();
-  const ladder = planLadder(skill);
+  const ladder = composeStage("plan", { minimalism: { mode: "full" } });
 
-  it("emits nothing at all when the mode is off", () => {
-    expect(ladder).toContain("minimalism.mode");
-    expect(ladder).toMatch(/include nothing/i);
+  it("emits no ladder at all when the mode is off", () => {
+    const off = composeStage("plan", { minimalism: { mode: "off" } });
+    expect(off).not.toMatch(/Prefer no task/i);
+    expect(off).not.toMatch(/Prefer plans that delete/i);
   });
 
-  it("sits alongside the task-count budget, in the same section", () => {
+  it("sits alongside the task-count budget in the same definition", () => {
     // Two instructions about how many tasks to plan reach the plan agent
     // together or not at all.
-    expect(section(skill, "plan")).toMatch(/Task-count budget for this plan/);
+    expect(ladder).toMatch(/Task-count budget for this plan/);
   });
 
   it("carries the four lite rungs", () => {
