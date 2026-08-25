@@ -124,3 +124,46 @@ describe("the load-bearing rules", () => {
     }
   });
 });
+
+// The wrapper restates autopilot's parking-condition count twice, as a way of
+// telling the reader "this file adds none of its own". Both restatements are
+// prose, so neither moves when the base skill grows a park — and that is not
+// hypothetical: the verify stage took the list from five conditions to nine
+// while both wrapper sentences still said five, and every test stayed green.
+//
+// Rather than hardcode the number a third time, derive it from the base skill
+// and assert the wrapper agrees. The count itself is checked against the
+// conditions actually listed, so the base skill cannot drift from its own
+// number either.
+describe("the wrapper's parking-condition count tracks the base skill", () => {
+  const BASE_SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
+  const baseSkill = readFileSync(BASE_SKILL_PATH, "utf8");
+
+  const parking = baseSkill.slice(
+    baseSkill.indexOf("## Parking"),
+    baseSkill.indexOf("## Common Rationalizations"),
+  );
+
+  const WORDS = {
+    four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12,
+  };
+
+  const stated = /(\w+) conditions park a run/i.exec(parking)?.[1].toLowerCase();
+
+  it("states a count the base skill's own list backs up", () => {
+    expect(stated).toBeDefined();
+    const listed = parking
+      .split("\n")
+      .filter((line) => line.startsWith("- ")).length;
+    expect(WORDS[stated]).toBe(listed);
+  });
+
+  it("uses that count where the wrapper says the conditions come from autopilot", () => {
+    expect(flat).toMatch(new RegExp(`all ${stated} parking conditions`, "i"));
+  });
+
+  it("uses that count where the park hook says it adds none of its own", () => {
+    expect(flat).toMatch(new RegExp(`autopilot's ${stated} existing reasons`, "i"));
+  });
+});
