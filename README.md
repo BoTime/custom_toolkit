@@ -97,6 +97,7 @@ run rather than reporting green.
 | `reaper` | `true` | Prune merged worktrees at `setup` |
 | `roles` | see defaults | Per-role `model` and `effort` for the nine dispatch roles |
 | `browser.ready_timeout_ms` | `120000` | How long `verify` waits for the app to answer before calling the stack dead |
+| `minimalism.mode` | `off` | `off` / `lite` / `full` — injects a YAGNI ladder into the `plan` and `sdd` dispatch prompts. At `off` both prompts are unchanged. |
 | `github` | four status names | Projects v2 wiring for `/autopilot-github` only. Ignored by plain `/autopilot`. |
 
 `/autopilot-github` additionally needs the two keys that cannot be guessed. The
@@ -122,11 +123,38 @@ naming the key — it never guesses.
 `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
 effort level.
 
+#### Pointing ponytail at autopilot's own roles (optional)
+
+[ponytail](https://github.com/DietrichGebert/ponytail) is a separate YAGNI
+decision-ladder plugin that injects its ruleset into spawned subagents. It is
+**optional and never required** — autopilot ships its own minimalism ladder
+under `minimalism.mode` above, with no dependency on ponytail, no preflight
+check for it and no version pin.
+
+If you do install it, scope its subagent hook to autopilot's own stage roles:
+
+```sh
+export PONYTAIL_SUBAGENT_MATCHER='^autopilot-(plan|implement|implement_complex)$'
+```
+
+That matcher deliberately **excludes the three reviewer roles** — `task_review`,
+`re_review` and `final_review` — for the same reason autopilot's own `sdd`
+contract withholds its ladder from them: a reviewer told the best code is the
+code you never wrote reads a thin implementation as discipline rather than as a
+gap, and rigor is the entire point of those roles. ponytail's own default when
+`PONYTAIL_SUBAGENT_MATCHER` is unset is **all** subagents, reviewers included,
+so the variable must be **set** rather than omitted if you want them protected.
+
+This reaches autopilot's own stage agents only. The nested implementers inside
+`subagent-driven-development` all run as identically-named `general-purpose`
+subagents, so no matcher can single them out; `minimalism.mode` is what covers
+that depth.
+
 ## Development
 
 ```bash
 npm install
-npm test                                    # vitest, 393 tests
+npm test                                    # vitest, 497 tests
 claude plugin validate ./plugins/autopilot  # manifest check
 claude --plugin-dir ./plugins/autopilot     # load locally for one session
 ```

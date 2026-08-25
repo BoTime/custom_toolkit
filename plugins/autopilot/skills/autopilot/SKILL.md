@@ -316,6 +316,41 @@ range with a low end still reads as a number to reach, which produces tasks
 invented to fill it — a full dispatch cycle plus a review round spent on work
 no acceptance criterion asked for.
 
+The dispatch prompt also carries a **minimalism ladder** — but only when
+`minimalism.mode` is `lite` or `full`, read from the same two config layers as
+everywhere else, with absent meaning `off`. **When `minimalism.mode` is `off`,
+include nothing from this subsection in the dispatch prompt.** The budget above
+says *how many* tasks; this says *which tasks are worth planning at all*.
+
+At `lite`, include text equivalent to:
+
+> Minimalism ladder for this plan, in order:
+>
+> 1. **Prefer no task.** If a stated outcome is already true in the repo, do
+>    not plan a task to make it true again.
+> 2. **Prefer fewer tasks.** Two steps that cannot be reviewed apart are one
+>    task.
+> 3. **Prefer the smallest task that satisfies the spec.** Plan what the
+>    acceptance criteria require, not what the subsystem might want later.
+> 4. **Do not plan an abstraction with one consumer.** If the plan cannot name
+>    the second consumer today, plan the direct thing.
+
+At `full`, include everything above plus two further rungs:
+
+> 5. **Prefer plans that delete.** A task that removes a code path and a task
+>    that adds one are not equally priced; the removal is cheaper to review,
+>    cheaper to run and cheaper to maintain. Where both reach the criteria,
+>    plan the removal.
+> 6. **Correctness outranks minimalism**, exactly as it outranks the
+>    task-count budget. A task that cannot be reviewed as one diff is two
+>    tasks, whatever the ladder says.
+
+Rung 6 mirrors the budget's rule 3 for the same reason that rule is
+load-bearing: an unqualified instruction to plan less produces oversized,
+unreviewable tasks, converting a wall-clock saving into fix rounds. This ladder
+governs task decomposition only — the `sdd` stage carries a separate minimalism
+contract about how code gets written, and the two must not be collapsed.
+
 The dispatch prompt also carries a learnings instruction. The plan agent is the
 one consumer of the run's accumulated learnings; every other stage is
 deliberately learnings-free. Include text equivalent to:

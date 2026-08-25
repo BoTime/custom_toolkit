@@ -100,3 +100,88 @@ describe("sdd minimalism contract", () => {
     expect(contract).toContain('"stage_at_fault":"plan"');
   });
 });
+
+/** The minimalism ladder inside the `plan` section, and nothing before it. */
+function planLadder(markdown) {
+  const plan = section(markdown, "plan");
+  const start = /minimalism ladder/i.exec(plan);
+  if (!start) throw new Error("the plan section carries no minimalism ladder");
+  const rest = plan.slice(start.index);
+  const end = /\nThe dispatch prompt also carries a learnings instruction/.exec(rest);
+  return end ? rest.slice(0, end.index) : rest;
+}
+
+describe("plan minimalism ladder", () => {
+  const skill = readFileSync(SKILL_PATH, "utf8");
+  const ladder = planLadder(skill);
+
+  it("emits nothing at all when the mode is off", () => {
+    expect(ladder).toContain("minimalism.mode");
+    expect(ladder).toMatch(/include nothing/i);
+  });
+
+  it("sits alongside the task-count budget, in the same section", () => {
+    // Two instructions about how many tasks to plan reach the plan agent
+    // together or not at all.
+    expect(section(skill, "plan")).toMatch(/Task-count budget for this plan/);
+  });
+
+  it("carries the four lite rungs", () => {
+    expect(ladder).toMatch(/Prefer no task/i);
+    expect(ladder).toMatch(/Prefer fewer tasks/i);
+    expect(ladder).toMatch(/smallest task that satisfies the spec/i);
+    expect(ladder).toMatch(/abstraction with one consumer/i);
+  });
+
+  it("carries the two further full rungs", () => {
+    expect(ladder).toMatch(/Prefer plans that delete/i);
+    expect(ladder).toMatch(/Correctness outranks minimalism/i);
+  });
+
+  it("keeps the decomposition ladder distinct from the sdd code ladder", () => {
+    // The plan ladder is about which tasks are worth planning; the sdd
+    // contract is about how code gets written. Collapsing them loses one.
+    expect(ladder).not.toMatch(/implementer dispatches only/i);
+  });
+});
+
+describe("README ponytail documentation", () => {
+  const readme = readFileSync(README_PATH, "utf8");
+
+  /** The ponytail subsection: its heading to the next heading of any level. */
+  const ponytailSection = () => {
+    const start = /^#### Pointing ponytail at/m.exec(readme);
+    if (!start) throw new Error("README has no ponytail subsection");
+    const rest = readme.slice(start.index);
+    const end = /\n#{1,4} .*$/m.exec(rest.slice(start[0].length));
+    return end ? rest.slice(0, start[0].length + end.index) : rest;
+  };
+  const ponytail = ponytailSection();
+
+  it("documents the optional matcher export", () => {
+    expect(ponytail).toContain("PONYTAIL_SUBAGENT_MATCHER");
+    expect(ponytail).toContain("^autopilot-(plan|implement|implement_complex)$");
+  });
+
+  it("states that ponytail is optional and never required", () => {
+    expect(ponytail).toMatch(/optional and never required/i);
+  });
+
+  it("states that the matcher excludes the three reviewer roles", () => {
+    expect(ponytail).toMatch(/exclude/i);
+    expect(ponytail).toContain("task_review");
+    expect(ponytail).toContain("re_review");
+    expect(ponytail).toContain("final_review");
+  });
+
+  it("warns that ponytail's own default is every subagent", () => {
+    // Unset is not "off", it is "all", reviewers included. Omitting the
+    // variable is the failure mode, so the README has to say so.
+    expect(ponytail).toMatch(/unset/i);
+    expect(ponytail).toMatch(/must be \*\*set\*\*/i);
+  });
+
+  it("documents the minimalism.mode key in the configuration table", () => {
+    expect(readme).toMatch(/\| `minimalism\.mode` \| `off` \|/);
+  });
+});
