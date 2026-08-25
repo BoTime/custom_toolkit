@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   EXIT,
+  main,
   parseCriteria,
   uiCriteria,
   summarize,
@@ -446,10 +448,114 @@ describe("findingsLines", () => {
     expect(failed.detail).toContain("expected visible");
   });
 
+  // The fix round's re-run passes `--round=2`; an unflagged first run must
+  // land on 1 rather than undefined, or the two rounds cluster identically.
+  it("defaults the round to 1 when the caller names none", () => {
+    for (const line of findingsLines(rows, {})) expect(line.round).toBe(1);
+  });
+
   // Absence of evidence: without the clean line, a run with no findings is
   // indistinguishable from a run whose findings were never written.
   it("emits one clean line when every criterion passed", () => {
     const lines = findingsLines([rows[0]], {});
     expect(lines).toEqual([{ task: 0, clean: true }]);
+  });
+});
+
+// `verify()` spawns a dev command, polls a URL and shells out to Playwright, so
+// its composition is not reachable from a unit test. These two facts are
+// ordering/threading bugs that leave every other test green, so they are pinned
+// against the source of the function instead of its behaviour.
+describe("verify()'s lifecycle order and round threading", () => {
+  const source = readFileSync(new URL("./autopilot-verify.mjs", import.meta.url), "utf8");
+  const body = source.slice(
+    source.indexOf("export async function verify("),
+    source.indexOf("export async function main("),
+  );
+
+  // The canonical recipe's `dev_command` brings up a docker stack. Seeding
+  // before it runs talks to a database whose container has not started, and
+  // parks a healthy branch on an infrastructure exit.
+  it("seeds only after the server has answered, and before the config is generated", () => {
+    const ready = body.indexOf("await waitForServer(");
+    const seed = body.indexOf("run(seed_command, cwd)");
+    const config = body.indexOf("playwright.config.cjs");
+    expect(ready).toBeGreaterThan(-1);
+    expect(seed).toBeGreaterThan(ready);
+    expect(seed).toBeLessThan(config);
+  });
+
+  // Something is running by the time the seed goes, so a seed that fails needs
+  // the `finally`'s teardown — which it only gets from inside the `try`.
+  it("seeds inside the try, so a failed seed still tears the stack down", () => {
+    expect(body.indexOf("run(seed_command, cwd)")).toBeGreaterThan(body.indexOf("let started;"));
+  });
+
+  it("threads the caller's round into the findings rather than hardcoding one", () => {
+    expect(body).toContain("findingsLines(rows, { round })");
+    expect(body).not.toContain("{ round: 1 }");
+  });
+
+  it("defaults round to 1, so an unflagged first run is round 1", () => {
+    expect(body).toMatch(/export async function verify\(\{[^}]*round = 1[^}]*\}\)/);
+  });
+});
+
+describe("main's run flags", () => {
+  const spy = () => {
+    const calls = [];
+    return {
+      calls,
+      fn: async (options) => {
+        calls.push(options);
+        return { code: EXIT.pass, message: "2/2 ui criteria passed" };
+      },
+    };
+  };
+
+  const silently = async (fn) => {
+    const log = console.log;
+    const exitCode = process.exitCode;
+    console.log = () => {};
+    try {
+      await fn();
+    } finally {
+      console.log = log;
+      process.exitCode = exitCode;
+    }
+  };
+
+  it("passes the paths through as the flags name them", async () => {
+    const { calls, fn } = spy();
+    await silently(() => main([
+      "run",
+      "--config=.claude/autopilot.json",
+      "--run-dir=.superpowers/autopilot/x/verify",
+      "--cwd=/wt",
+      "--spec=docs/x-design.md",
+    ], fn));
+    expect(calls[0]).toMatchObject({
+      configPath: ".claude/autopilot.json",
+      runDir: ".superpowers/autopilot/x/verify",
+      cwd: "/wt",
+      specPath: "docs/x-design.md",
+    });
+  });
+
+  // The first invocation carries no flag. Defaulting to 1 here is what keeps it
+  // distinct from the fix round's re-run.
+  it("defaults the round to 1 when no --round is given", async () => {
+    const { calls, fn } = spy();
+    await silently(() => main(["run", "--run-dir=/run/verify", "--spec=s.md"], fn));
+    expect(calls[0].round).toBe(1);
+  });
+
+  // Without this, a criterion still red after the fix round writes a second
+  // finding identical to the first, and clusterFindings counts one twice-failing
+  // criterion as two occurrences of the same cluster.
+  it("parses --round=2 as a number, not a string", async () => {
+    const { calls, fn } = spy();
+    await silently(() => main(["run", "--run-dir=/run/verify", "--spec=s.md", "--round=2"], fn));
+    expect(calls[0].round).toBe(2);
   });
 });

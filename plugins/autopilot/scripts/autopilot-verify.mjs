@@ -401,7 +401,14 @@ export function appendFindings(runDir, lines, append = appendFileSync) {
   return path;
 }
 
-export async function verify({ configPath, runDir, cwd, specPath }) {
+/**
+ * `round` is what keeps a fix round's findings from double-counting. The
+ * pattern strings this stage emits are drawn from a fixed pair, so a criterion
+ * still red after the fix round would otherwise write a second line identical
+ * to the first — and `clusterFindings` would read one twice-failing criterion
+ * as two occurrences of the same cluster.
+ */
+export async function verify({ configPath, runDir, cwd, specPath, round = 1 }) {
   const { config } = loadConfig(configPath);
   const readyTimeoutMs = config.browser?.ready_timeout_ms ?? 120000;
 
@@ -438,13 +445,6 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
   mkdirSync(artifactsDir, { recursive: true });
   linkModules(runDir, cwd);
 
-  if (seed_command) {
-    const seeded = run(seed_command, cwd);
-    if (seeded.code !== 0) {
-      return { code: EXIT.infrastructure, message: `seed command failed: ${seeded.stderr.trim()}` };
-    }
-  }
-
   let started;
   try {
     started = startDevCommand(dev_command, cwd);
@@ -461,6 +461,19 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
         code: EXIT.infrastructure,
         message: `dev server did not answer ${resolved.url} within ${readyTimeoutMs}ms`,
       };
+    }
+
+    // Seeding waits until the server answers. The canonical recipe's
+    // `dev_command` brings up a docker stack, so a seed run before it would
+    // talk to a database whose container has not started — parking a healthy
+    // branch on an infrastructure exit. Inside the `try`, a seed that fails
+    // now also gets the `finally`'s teardown, which it needs: something is
+    // running by this point.
+    if (seed_command) {
+      const seeded = run(seed_command, cwd);
+      if (seeded.code !== 0) {
+        return { code: EXIT.infrastructure, message: `seed command failed: ${seeded.stderr.trim()}` };
+      }
     }
 
     const configFile = join(runDir, "playwright.config.cjs");
@@ -495,7 +508,7 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
 
     const rows = attribute(parsed.criteria, summary);
     writeFileSync(join(runDir, "pr-section.md"), formatVerifySection(rows, { artifactsDir }), "utf8");
-    appendFindings(runDir, findingsLines(rows, { round: 1 }));
+    appendFindings(runDir, findingsLines(rows, { round }));
 
     // A criterion with no test is a gap in this stage, not a pass, so it is
     // failure-weighted alongside a red assertion.
@@ -515,7 +528,9 @@ export async function verify({ configPath, runDir, cwd, specPath }) {
   }
 }
 
-export async function main(argv = process.argv.slice(2)) {
+// `runVerify` is injected the way the other scripts inject their side effects,
+// so the flag parsing below is testable without a browser stack.
+export async function main(argv = process.argv.slice(2), runVerify = verify) {
   const [command, ...rest] = argv;
   const flag = (name, fallback) =>
     rest.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
@@ -548,11 +563,12 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   if (command === "run") {
-    const result = await verify({
+    const result = await runVerify({
       configPath: flag("config", ".claude/autopilot.json"),
       runDir: flag("run-dir"),
       cwd: flag("cwd", process.cwd()),
       specPath: flag("spec"),
+      round: Number(flag("round", "1")),
     });
     console.log(`status: ${Object.keys(EXIT).find((k) => EXIT[k] === result.code)}`);
     console.log(result.message);

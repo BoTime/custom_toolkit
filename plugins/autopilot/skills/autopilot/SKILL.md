@@ -531,15 +531,29 @@ spec has no `## Acceptance criteria` section or an item is untagged. Then:
 
 | Condition | Action |
 |---|---|
-| `ui` count is 0 | Append `verify: skipped (no ui criteria)` and go to `learnings` |
+| `ui` count is 0 | Run the `skip` subcommand below, append `verify: skipped (no ui criteria)`, and go to `learnings` |
 | `(ui)` criteria and a usable `recipe.json` | Run |
 | `(ui)` criteria, no usable `recipe.json` | **Park** — `PARKED — verify cannot run: <reason>` |
 | `(ui)` criteria, `@playwright/test` absent | **Park** — same line |
 | The criteria command exits non-zero | **Park** — the spec cannot state what done means |
 
-The skip line is not optional bookkeeping. `nextStage` resumes at `learnings`
-by matching an entry starting `verify`, so a stage that skips silently sends
-every later resume back through `verify` forever.
+Skipping is two steps, not one:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" skip \
+  --run-dir=.superpowers/autopilot/<run>/verify \
+  --reason="no ui acceptance criteria"
+```
+
+then append `verify: skipped (no ui criteria)`.
+
+Neither step is optional bookkeeping. The `skip` subcommand writes the
+`pr-section.md` that the `pr` stage concatenates, which is what lets that stage
+say the verification section is written here in both the passing and the
+skipped case; without it a skipped run silently has no section at all. And
+`nextStage` resumes at `learnings` by matching an entry starting `verify`, so a
+stage that skips without appending its ledger line sends every later resume
+back through `verify` forever.
 
 A backend repo therefore costs nothing: it writes no `(ui)` criteria and this
 stage never speaks. The two parks are the deliberate part. A criterion with no
@@ -644,16 +658,18 @@ node "$AP/scripts/autopilot-verify.mjs" run \
   --spec=<path-to-spec>
 ```
 
-The script owns everything mechanical: it reads the recipe, runs the optional
-`seed_command`, starts `dev_command` in its own process group, resolves the base
-URL with `base_url_command`, generates the Playwright config, polls the URL
-until it answers or `ready_timeout_ms` (default 120000) expires, runs the specs,
-and tears the stack down with `stop_command` in a `finally` — falling back to
-killing the process group only when the recipe supplies no stop command. A
-clean `dev_command` exit means setup finished, not that the server died; only a
-non-zero exit is a failure. Do not start a dev server by hand, and do not check
-the port yourself — a stray server from a hand-started run holds the port and
-makes the next run look broken.
+The script owns everything mechanical: it reads the recipe, checks that
+`@playwright/test` resolves, starts `dev_command` in its own process group,
+resolves the base URL with `base_url_command`, polls that URL until it answers
+or `ready_timeout_ms` (default 120000) expires, runs the optional
+`seed_command` — after the stack is up, because the canonical `dev_command`
+starts the database the seed talks to — generates the Playwright config, runs
+the specs, and tears the stack down with `stop_command` in a `finally` —
+falling back to killing the process group only when the recipe supplies no stop
+command. A clean `dev_command` exit means setup finished, not that the server
+died; only a non-zero exit is a failure. Do not start a dev server by hand, and
+do not check the port yourself — a stray server from a hand-started run holds
+the port and makes the next run look broken.
 
 #### Outcomes
 
@@ -670,23 +686,41 @@ different responses:
 
 **The fix round.** On exit 1, dispatch the `implement` role with the failing
 criteria and the summarized failures — not the raw report — then re-run the
-script. Green continues. Still red parks:
+script **with `--round=2`**:
+
+```bash
+node "$AP/scripts/autopilot-verify.mjs" run \
+  --config=.claude/autopilot.json \
+  --run-dir=.superpowers/autopilot/<run>/verify \
+  --cwd=<worktree path> \
+  --spec=<path-to-spec> \
+  --round=2
+```
+
+Green continues. Still red parks:
 `PARKED — verify red after fix round: <criteria>`.
 
 One round, mirroring `land`'s conflict resolver: one dispatched attempt, then a
 human decides. A stage that retries until green tunes the test to the bug.
+
+The flag is not bookkeeping. The first invocation of `run`, up in the dispatch,
+omits it and is round 1; this re-run must say `--round=2`, or a criterion still
+red writes a second finding identical to the first and the findings clustering
+reads one twice-failing criterion as two. Since only one fix round is ever
+attempted, `2` is the only value this flag ever takes.
 
 The script appends the findings itself, to
 `.superpowers/autopilot/<run>/findings.jsonl` in the **main checkout**, under
 the existing seven-field contract — `task`, `round`, `severity`,
 `stage_at_fault`, `pattern`, `detail`, `verdict` — with `task: 0` as the
 sentinel for "not a numbered SDD task", and `{"task": 0, "clean": true}` when
-every criterion passed. `stage_at_fault` stays inside the same four values:
-`implementation` when the UI does not do what the criterion says, `spec` when
-the criterion turned out to be ambiguous as written. Invent no new value — and
-in particular no `verify` value: the field names the stage that produced the
-bad input, never the stage that surfaced it. Do not append these lines
-yourself; the script has already written them.
+every criterion passed. `stage_at_fault` stays inside the same four values,
+but this stage can only ever emit `implementation` — it has no way to tell a
+broken UI from an ambiguous criterion, so every unmet criterion is attributed
+to the implementation that failed to satisfy it as written. Invent no new
+value — and in particular no `verify` value: the field names the stage that
+produced the bad input, never the stage that surfaced it. Do not append these
+lines yourself; the script has already written them.
 
 `learnings` now runs immediately after this stage, which is what lets it read
 browser evidence and review evidence in one pass.
@@ -697,15 +731,18 @@ Append: `verify: <n>/<n> ui criteria passed`.
 
 Dispatch the `learnings` role to rewrite `docs/autopilot/learnings.md` inside
 the worktree and commit it. This is the one artifact the pipeline both writes
-and reads: `sdd` captures review findings, the learnings role distills them
-into planning rules, and the next run's `plan` stage reads the doc.
+and reads: `sdd` and `verify` both capture findings — code-review findings and
+browser evidence respectively — the learnings role distills them into planning
+rules, and the next run's `plan` stage reads the doc.
 
 The dispatch prompt instructs the role to:
 
 1. Read this run's findings at `.superpowers/autopilot/<run>/findings.jsonl`
    in the **main checkout** — via Bash, not Write/Edit, because a
    worktree-isolated session cannot write the main checkout but Bash reads
-   work.
+   work. The file mixes both producers under one seven-field contract: `sdd`'s
+   review findings and `verify`'s browser evidence, told apart by
+   `stage_at_fault` and `pattern`, not by any producer tag.
 2. Read the accumulated corpus across `.superpowers/autopilot/*/findings.jsonl`
    the same way.
 3. Read the existing `docs/autopilot/learnings.md` on the branch, if present.

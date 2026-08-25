@@ -145,6 +145,13 @@ describe("verify outcomes", () => {
     expect(verify).toMatch(/not a fix round/i);
   });
 
+  // Without the flag the re-run is indistinguishable from the first run at the
+  // findings level, and one twice-failing criterion clusters as two.
+  it("tells the re-run to declare itself round 2", () => {
+    expect(verify).toContain("--round=2");
+    expect(verify).toMatch(/re-run the script \*{0,2}with `?--round=2/i);
+  });
+
   it("caps the fix round at one, then parks", () => {
     expect(verify).toMatch(/one round/i);
     expect(verify).toContain("PARKED — verify red after fix round");
@@ -178,6 +185,14 @@ describe("verify gating", () => {
   it("says a (ui) acceptance criterion is what turns the stage on", () => {
     expect(verify).toMatch(/writing a `?\(ui\)`? acceptance criterion/i);
     expect(verify).toMatch(/nothing to configure|no flag/i);
+  });
+
+  // The `pr` stage claims the verification section is written here in both the
+  // passing and the skipped case. That is only true if the skip path is told to
+  // run the subcommand that writes it.
+  it("tells a skipping run to write its pr section too", () => {
+    expect(verify).toMatch(/autopilot-verify\.mjs" skip/);
+    expect(verify).toContain("pr-section.md");
   });
 
   it("skips a spec with no ui criteria and parks one that cannot be verified", () => {

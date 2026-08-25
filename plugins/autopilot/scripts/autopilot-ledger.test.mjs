@@ -86,7 +86,7 @@ describe("nextStage", () => {
     const partial = LEDGER.split("\n").slice(0, 7).join("\n");
     for (const line of [
       "verify: skipped (no ui criteria)",
-      "verify: skipped (browser not configured)",
+      "verify: skipped (no ui acceptance criteria)",
     ]) {
       const skipped = `${partial}\n2026-07-29T16:15:02Z  ${line}`;
       expect(nextStage(parseLedger(skipped))).toBe("learnings");
