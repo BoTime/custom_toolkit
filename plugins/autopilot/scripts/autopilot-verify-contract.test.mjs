@@ -5,9 +5,14 @@
 // simply start reading full DOM snapshots and compacting mid-run, or start
 // retrying a red branch until it went green.
 //
-// This test reads SKILL.md and asserts the load-bearing pieces are present
-// within the `verify` section, where a dispatched agent will actually read
-// them, and that the ledger strings it prescribes still match `nextStage`.
+// This test asserts the load-bearing pieces are present in what the `verify`
+// dispatch actually carries, and that the ledger strings it prescribes still
+// match `nextStage`.
+//
+// `section` resolves the `references/dispatch/*.md` fragments a stage names,
+// inlining each where it is named. The browser-verification contract now
+// travels to the dispatched agent by `cat` rather than as inline prose, so
+// following that route is what keeps these assertions meaning what they meant.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -15,47 +20,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseLedger, nextStage } from "./autopilot-ledger.mjs";
 import { EXIT, RECIPE_KEYS } from "./autopilot-verify.mjs";
+import { readSkill, sectionOf as section, unwrap } from "./skill-sections.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
 const GITHUB_SKILL_PATH = join(HERE, "..", "skills", "autopilot-github", "SKILL.md");
 
-// SKILL.md is hard-wrapped prose, so a pinned phrase routinely straddles a
-// newline. Collapse whitespace before matching; otherwise a reflow that changes
-// no words at all would fail these tests.
-const unwrap = (s) => s.replace(/\s+/g, " ");
-
-/**
- * Blank out fenced code blocks, preserving offsets.
- *
- * The `spec` section embeds a markdown example that contains a literal
- * `## Acceptance criteria` line. Without masking, the boundary search below
- * treats that example as the start of the next section and truncates the
- * section to a few lines — so a rule further down would read as absent and
- * this test would pass a contract nobody wrote.
- */
-function maskFences(markdown) {
-  return markdown.replace(/^```[\s\S]*?^```/gm, (block) => block.replace(/[^\n]/g, " "));
-}
-
-/**
- * A stage section: from its heading to the next heading at the same level or
- * shallower. Anchored at line starts for the same reason as the other contract
- * tests — a rule outside this section never reaches the dispatched agent.
- */
-function section(markdown, heading) {
-  const masked = maskFences(markdown);
-  const startMatch = new RegExp(`^### \`${heading}\`.*$`, "m").exec(masked);
-  if (!startMatch) throw new Error(`SKILL.md has no \`${heading}\` stage section`);
-  const after = masked.slice(startMatch.index + startMatch[0].length);
-  const endMatch = /\n#{1,3} .*$/m.exec(after);
-  const end = endMatch
-    ? startMatch.index + startMatch[0].length + endMatch.index
-    : markdown.length;
-  return markdown.slice(startMatch.index, end);
-}
-
-const skill = readFileSync(SKILL_PATH, "utf8");
+const skill = readSkill();
 const verify = unwrap(section(skill, "verify"));
 const whole = unwrap(skill);
 

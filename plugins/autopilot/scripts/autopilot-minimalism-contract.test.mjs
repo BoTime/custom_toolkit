@@ -14,27 +14,19 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readSkill, sectionOf as section } from "./skill-sections.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
 const README_PATH = join(HERE, "..", "..", "..", "README.md");
 
 /**
- * The `### \`<heading>\`` section: from its heading line to the next heading at
- * the same level or shallower (`###`, `##`, or `#`), both anchored to the start
- * of a line. The end anchor accepts shallower headings so that promoting a
- * following section cannot widen this one and let text living elsewhere satisfy
- * assertions that are supposed to prove where it lives.
+ * The minimalism contract the `sdd` dispatch carries, and nothing before it.
+ *
+ * `section` resolves the `references/dispatch/*.md` fragments the stage names,
+ * inlining each where it is named — so the gating paragraph in SKILL.md and the
+ * ladder fragments it `cat`s land in the order the dispatch assembles them, and
+ * this slice sees both.
  */
-function section(markdown, heading) {
-  const start = new RegExp("^### `" + heading + "`.*$", "m").exec(markdown);
-  if (!start) throw new Error("SKILL.md has no ### " + heading + " section");
-  const rest = markdown.slice(start.index);
-  const end = /\n#{1,3} .*$/m.exec(rest.slice(start[0].length));
-  return end ? rest.slice(0, start[0].length + end.index) : rest;
-}
-
-/** The minimalism contract inside the `sdd` section, and nothing before it. */
 function minimalismContract(markdown) {
   const sdd = section(markdown, "sdd");
   const start = /minimalism contract/i.exec(sdd);
@@ -45,7 +37,7 @@ function minimalismContract(markdown) {
 }
 
 describe("sdd minimalism contract", () => {
-  const contract = minimalismContract(readFileSync(SKILL_PATH, "utf8"));
+  const contract = minimalismContract(readSkill());
 
   it("emits nothing at all when the mode is off", () => {
     expect(contract).toContain("minimalism.mode");
@@ -112,7 +104,7 @@ function planLadder(markdown) {
 }
 
 describe("plan minimalism ladder", () => {
-  const skill = readFileSync(SKILL_PATH, "utf8");
+  const skill = readSkill();
   const ladder = planLadder(skill);
 
   it("emits nothing at all when the mode is off", () => {
