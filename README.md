@@ -154,7 +154,7 @@ that depth.
 
 ```bash
 npm install
-npm test                                    # vitest, 497 tests
+npm test                                    # vitest, 498 tests
 claude plugin validate ./plugins/autopilot  # manifest check
 claude --plugin-dir ./plugins/autopilot     # load locally for one session
 ```

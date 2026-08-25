@@ -151,7 +151,22 @@ export function validateConfig(obj, env) {
   // loading, which is why `minimalism` stays out of TOP_LEVEL. A present but
   // unknown mode is, though: a typo that silently degraded to "off" would be
   // indistinguishable from never having configured the feature.
-  const minimalismMode = obj.minimalism?.mode;
+  //
+  // The same reasoning covers the block's own shape: `"minimalism": "full"` is
+  // the flattening a one-key block invites, and unchecked it reaches the
+  // shallow spread in mergeConfig as a string and degrades to "off" just as
+  // silently. Checked before the mode so a non-object reports one clear error
+  // rather than also complaining about a mode it cannot have.
+  const minimalism = obj.minimalism;
+  const minimalismIsBlock =
+    typeof minimalism === "object" &&
+    minimalism !== null &&
+    !Array.isArray(minimalism);
+  if (minimalism !== undefined && !minimalismIsBlock) {
+    errors.push("minimalism: must be an object with a `mode` key");
+  }
+
+  const minimalismMode = minimalismIsBlock ? minimalism.mode : undefined;
   if (
     minimalismMode !== undefined &&
     !MINIMALISM_MODES.includes(minimalismMode)

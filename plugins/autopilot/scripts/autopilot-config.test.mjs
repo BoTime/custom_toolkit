@@ -548,6 +548,19 @@ describe("minimalism config", () => {
     );
   });
 
+  it("rejects a minimalism value that is not a block", () => {
+    // `"minimalism": "full"` is the flattening a one-key block invites. Without
+    // the shape guard it validates clean, then merges into
+    // { mode: "off", 0: "f", ... } and the feature is silently off.
+    for (const value of ["full", null, ["full"]]) {
+      const result = validateConfig({ ...validConfig(), minimalism: value }, {});
+      expect(result.ok).toBe(false);
+      expect(result.errors).toContain(
+        "minimalism: must be an object with a `mode` key",
+      );
+    }
+  });
+
   it("surfaces an unknown mode as a load failure, not a silent fallback", () => {
     const readFile = reader({
       [DEFAULTS]: JSON.stringify(withMinimalism()),

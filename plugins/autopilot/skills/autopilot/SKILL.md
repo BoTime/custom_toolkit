@@ -319,8 +319,9 @@ no acceptance criterion asked for.
 The dispatch prompt also carries a **minimalism ladder** — but only when
 `minimalism.mode` is `lite` or `full`, read from the same two config layers as
 everywhere else, with absent meaning `off`. **When `minimalism.mode` is `off`,
-include nothing from this subsection in the dispatch prompt.** The budget above
-says *how many* tasks; this says *which tasks are worth planning at all*.
+include nothing from the minimalism ladder below in the dispatch prompt.** The
+budget above says *how many* tasks; this says *which tasks are worth planning
+at all*.
 
 At `lite`, include text equivalent to:
 
@@ -525,10 +526,10 @@ the plugin's `autopilot.default.json` with the project's optional
 `.claude/autopilot.json` layered over it, the same two layers the `roles` block
 above comes from. Absent means `off`.
 
-**When `minimalism.mode` is `off`, include nothing from this subsection in the
-dispatch prompt.** That is the default, and it is what makes the feature unable
-to regress an existing run: the prompt stays byte-identical to one composed
-before the key existed.
+**When `minimalism.mode` is `off`, include nothing from the minimalism contract
+below in the dispatch prompt.** That is the default, and it is what makes the
+feature unable to regress an existing run: the prompt stays byte-identical to
+one composed before the key existed.
 
 At `lite`, include text equivalent to:
 
