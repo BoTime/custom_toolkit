@@ -9,6 +9,13 @@ export const ROLES = [
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 /**
+ * The minimalism ladder's intensity. `off` is the default and emits no ladder
+ * text at all, leaving every dispatch prompt byte-identical to one composed
+ * before this key existed.
+ */
+export const MINIMALISM_MODES = ["off", "lite", "full"];
+
+/**
  * The `github` keys the autopilot-github wrapper needs, in report order.
  *
  * Deliberately NOT part of `TOP_LEVEL` below: that list is a hard error on
@@ -65,6 +72,13 @@ export function mergeConfig(defaults, project) {
   // with a budget rather than none.
   if (defaults.browser || project.browser) {
     merged.browser = { ...defaults.browser, ...(project.browser ?? {}) };
+  }
+
+  // And likewise for `minimalism`: a project supplying a partial block — or an
+  // unrelated key alongside it — must still inherit the default mode rather
+  // than silently losing it to the shallow top-level merge.
+  if (defaults.minimalism || project.minimalism) {
+    merged.minimalism = { ...defaults.minimalism, ...(project.minimalism ?? {}) };
   }
 
   return merged;
@@ -131,6 +145,35 @@ export function validateConfig(obj, env) {
     (!Number.isInteger(timeout) || timeout < 1)
   ) {
     errors.push("browser.ready_timeout_ms: must be a positive integer");
+  }
+
+  // Absent is not an error — every config that predates this key must keep
+  // loading, which is why `minimalism` stays out of TOP_LEVEL. A present but
+  // unknown mode is, though: a typo that silently degraded to "off" would be
+  // indistinguishable from never having configured the feature.
+  //
+  // The same reasoning covers the block's own shape: `"minimalism": "full"` is
+  // the flattening a one-key block invites, and unchecked it reaches the
+  // shallow spread in mergeConfig as a string and degrades to "off" just as
+  // silently. Checked before the mode so a non-object reports one clear error
+  // rather than also complaining about a mode it cannot have.
+  const minimalism = obj.minimalism;
+  const minimalismIsBlock =
+    typeof minimalism === "object" &&
+    minimalism !== null &&
+    !Array.isArray(minimalism);
+  if (minimalism !== undefined && !minimalismIsBlock) {
+    errors.push("minimalism: must be an object with a `mode` key");
+  }
+
+  const minimalismMode = minimalismIsBlock ? minimalism.mode : undefined;
+  if (
+    minimalismMode !== undefined &&
+    !MINIMALISM_MODES.includes(minimalismMode)
+  ) {
+    errors.push(
+      `minimalism.mode: "${minimalismMode}" is not one of ${MINIMALISM_MODES.join(", ")}`,
+    );
   }
 
   const override = env.CLAUDE_CODE_EFFORT_LEVEL;
