@@ -51,6 +51,3 @@ export function composeStage(stage, { minimalism, hasLearnings = true } = {}) {
     worktreeHas: () => hasLearnings,
   });
 }
-
-/** Collapse whitespace — these files are hard-wrapped, so a phrase straddles lines. */
-export const unwrap = (s) => s.replace(/\s+/g, " ");

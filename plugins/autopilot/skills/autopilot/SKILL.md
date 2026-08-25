@@ -266,7 +266,7 @@ node "$AP/scripts/autopilot-dispatch.mjs" spec \
   --branch=<branch> \
   --spec-path=docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md \
   --design=@.superpowers/autopilot/<run>/design.md \
-  --criteria-source="The acceptance criteria for this spec come from the design settled in the brainstorm, above."
+  --criteria-source="The acceptance criteria for this spec come from the design settled in the brainstorm, below."
 ```
 
 Dispatch by the printed path.
@@ -535,8 +535,10 @@ Append: `learnings committed → docs/autopilot/learnings.md`.
 
 ### `land`
 
-Run `node "$AP/scripts/autopilot-land.mjs" <base_ref>` from the repository
-root.
+Run `node "$AP/scripts/autopilot-land.mjs" <base_ref> | tee .superpowers/autopilot/<run>/land.txt`
+from the repository root, capturing its output. The `conflict` outcome below
+reuses this capture — re-running the script here would hit a rebase already in
+progress and misreport the error as the conflict list.
 
 **If `test_command` is not set, park immediately** — before rebasing. Without
 it there is no way to tell a landed branch from a broken one, and the whole
@@ -550,13 +552,12 @@ absent test command as a pass.
   dispatch by the printed path:
 
   ```bash
-  node "$AP/scripts/autopilot-land.mjs" <base_ref> > .superpowers/autopilot/<run>/conflicts.txt
   node "$AP/scripts/autopilot-dispatch.mjs" land-conflict \
     --run=<run> \
     --config=.claude/autopilot.json \
     --worktree=<worktree path> \
     --base-ref=<config.base_ref> \
-    --conflicts=@.superpowers/autopilot/<run>/conflicts.txt
+    --conflicts=@.superpowers/autopilot/<run>/land.txt
   ```
 
   It resolves only what it can reason about confidently and reports anything
