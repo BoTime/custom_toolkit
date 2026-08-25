@@ -49,26 +49,18 @@ commands to run; a human runs them once.
 
 Dispatch the `verify` role. It authors the checks; the script runs them.
 
-Everything it writes goes to `.superpowers/autopilot/<run>/verify/` in the
-**main checkout** — `specs/` for the test files, `fixtures/` for mock data.
-Nothing is committed, and nothing goes in the worktree. These artifacts are
-per-run and worth exactly one run.
-
-The same harness constraint as the ledger applies: a worktree-isolated session
-cannot Write or Edit into the main checkout, but **Bash redirects work**. The
-role writes spec files with `cat > <path> <<'EOF'` heredocs.
-
-Specs import `@playwright/test` normally, even though they sit outside the
-project: the script symlinks the project's `node_modules` into the run
-directory so Node's upward resolution finds it. Do not work around this with
-absolute import paths — if an import fails, the stage returns the
-infrastructure exit and parks rather than reporting uncovered criteria.
-
-The dispatch prompt carries the browser verification contract:
+Compose it and dispatch by the printed path:
 
 ```bash
-cat "$AP/skills/autopilot/references/dispatch/verify-browser.md" >> "$A"
+node "$AP/scripts/autopilot-dispatch.mjs" verify \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path> \
+  --spec-path=<path-to-spec> \
+  --verify-dir=.superpowers/autopilot/<run>/verify
 ```
+
+The composed definition carries the browser verification contract.
 
 Then run the checks:
 

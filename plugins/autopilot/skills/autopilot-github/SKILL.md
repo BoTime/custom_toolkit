@@ -170,8 +170,8 @@ autopilot's `spec` stage requires an `## Acceptance criteria` section, and the
 that list has an authoritative source the plain pipeline lacks: the issue.
 
 The issue body already reaches the brainstorm inside `task`, so nothing extra
-needs fetching. What this delta adds is one instruction to carry into the
-`spec` dispatch:
+needs fetching. What this delta adds is one instruction, carried into the
+`spec` dispatch in place of autopilot's default `--criteria-source` sentence:
 
 > The acceptance criteria for this spec come from GitHub issue #\<n\>. Where
 > the issue states criteria — a checklist, an "acceptance criteria" heading, a
@@ -180,6 +180,26 @@ needs fetching. What this delta adds is one instruction to carry into the
 > brainstorm settled a criterion the issue left implicit, add it. Do not drop
 > a stated criterion because it looks hard to verify: tag it `(non-ui)` if it
 > is not browser-observable, but keep it.
+
+Write it to a file in the run directory with a quoted heredoc, and pass the
+file to the `spec` dispatch as `--criteria-source=@<path>` in place of
+autopilot's default sentence:
+
+```bash
+cat > .superpowers/autopilot/<run>/criteria-source.md <<'EOF'
+The acceptance criteria for this spec come from GitHub issue #<n>. Where the
+issue states criteria — a checklist, an "acceptance criteria" heading, a
+"should" list — carry every one of them into the spec's
+`## Acceptance criteria` section, preserving their meaning. Where the
+brainstorm settled a criterion the issue left implicit, add it. Do not drop a
+stated criterion because it looks hard to verify: tag it `(non-ui)` if it is
+not browser-observable, but keep it.
+EOF
+```
+
+Only the issue **number** is interpolated, and only into a `<<'EOF'` heredoc,
+which performs no expansion. Issue title and body text still reach the agent
+only through a file the dispatch script reads — never through a shell string.
 
 The reason to pin this: an issue's criteria are what the reporter will check
 the PR against. A spec that quietly narrows them produces a run that verifies

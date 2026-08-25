@@ -156,42 +156,44 @@ if so.
 
 ### Composing a dispatch
 
-Every dispatch is a subagent definition carrying the role's model and effort
-from config. The Agent tool has no `effort` parameter; frontmatter is the only
-way to set it. Build the file, then dispatch by it:
+You do not compose dispatches. `autopilot-dispatch.mjs` does:
 
 ```bash
-A=.superpowers/autopilot/<run>/agents/<role>.md
-mkdir -p "$(dirname "$A")"
-cat > "$A" <<'EOF'
----
-name: autopilot-<role>
-description: <role> stage of an autopilot run
-model: <config.roles.<role>.model>
-effort: <config.roles.<role>.effort>
----
-EOF
-cat >> "$A" <<'EOF'
-<the stage's own instructions, written by you>
-EOF
+node "$AP/scripts/autopilot-dispatch.mjs" <stage> \
+  --run=<run> --config=.claude/autopilot.json [--key=value ...]
 ```
 
-Stages below name **dispatch fragments** — verbatim prompt text kept in
-`references/dispatch/`. Append them with `cat`, never by retyping them:
+It writes `.superpowers/autopilot/<run>/agents/<stage>.md` — the subagent
+definition, carrying the role's model and effort from config plus every
+contract that stage owes its agent — and prints **that path and nothing else**.
+Dispatch the Agent by the printed path.
 
-```bash
-cat "$AP/skills/autopilot/references/dispatch/<fragment>.md" >> "$A"
-```
+The Agent tool has no `effort` parameter; frontmatter is the only way to set
+it, which is why a dispatch is a file rather than a string.
 
-`$A` and `$AP` are written here for readability only. Shell variables do not
-persist between Bash calls, so substitute both literal paths into every command
-you actually run — or set them again at the top of each call.
+Four rules:
 
-`cat` is what keeps this cheap. The fragment travels from the plugin directory
-into the prompt without passing through your context, so a contract costs you
-nothing to deliver. Do not read a fragment to check it, do not summarize one
-into your own words, and do not paraphrase one into the prompt — a
-reworded contract is a different contract.
+1. **Any non-zero exit stops the run.** The message on stderr names what is
+   absent — the stage, the placeholder, the flag, the fragment, the
+   `roles.<role>` field. Never work around it by writing a prompt yourself: a
+   stage dispatched without its contract produces plausible work that skipped
+   the process, and reports success.
+2. **Do not read the composed file.** The fragments travel from the plugin
+   directory into the definition inside the node process, so they are never a
+   tool result and cost you nothing. Reading the file spends exactly the
+   context the script exists to save.
+3. **Multi-line values go to a file, and the flag says `@path`.** Write the
+   value into the run directory with a quoted heredoc (`cat > path <<'EOF'`),
+   then pass `--key=@path`. Single-line values — paths, the run name, the
+   branch — are passed inline. `--key=@@literal` escapes a value that
+   genuinely starts with `@`.
+4. **Flags are kebab-case; the template's placeholders are snake_case.**
+   `--spec-path` fills `{{spec_path}}`. A flag no template consumes is an
+   error, because the value it carried would never have reached the agent.
+
+`$AP` is written here for readability only. Shell variables do not persist
+between Bash calls, so substitute the literal path into every command you
+actually run — or set it again at the top of each call.
 
 ### The ledger
 
@@ -249,16 +251,31 @@ and commit it. This is the run's first commit.
 
 **The spec must carry an `## Acceptance criteria` section** — the run's one
 statement of what "done" means, which `verify` reads to decide what to check in
-a browser and whether to open one at all. Its shape and rules go in the
-dispatch prompt:
+a browser and whether to open one at all.
+
+The design is multi-line, so it goes to a file first:
 
 ```bash
-cat "$AP/skills/autopilot/references/dispatch/spec-criteria.md" >> "$A"
+cat > .superpowers/autopilot/<run>/design.md <<'EOF'
+<the design the brainstorm settled>
+EOF
+node "$AP/scripts/autopilot-dispatch.mjs" spec \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path> \
+  --branch=<branch> \
+  --spec-path=docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md \
+  --design=@.superpowers/autopilot/<run>/design.md \
+  --criteria-source="The acceptance criteria for this spec come from the design settled in the brainstorm, below."
 ```
 
+Dispatch by the printed path.
+
 `/autopilot-github` seeds the criteria from the issue body, a plain
-`/autopilot` from the brainstorm's design. Either way the spec is where they
-land, which is what lets `plan` and `verify` both read one list.
+`/autopilot` from the brainstorm's design — that difference is what
+`--criteria-source` carries, and nothing else in the stage changes. Either way
+the spec is where they land, which is what lets `plan` and `verify` both read
+one list.
 
 Append: `spec committed → <path>`.
 
@@ -267,37 +284,27 @@ Append: `spec committed → <path>`.
 Dispatch the `plan` role. It invokes `superpowers:writing-plans` against the
 approved spec and returns the plan path.
 
+```bash
+node "$AP/scripts/autopilot-dispatch.mjs" plan \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path> \
+  --spec-path=<path-to-spec>
+```
+
+Dispatch by the printed path.
+
 Task count is the single largest driver of a run's wall-clock time, so the
-dispatch prompt carries a task-count budget:
+composed definition carries a task-count budget. It also carries a minimalism
+ladder when `minimalism.mode` is `lite` or `full`, and a learnings instruction
+when the worktree has `docs/autopilot/learnings.md` — the plan agent is the one
+consumer of the run's accumulated learnings, and every other stage is
+deliberately learnings-free. The script reads all three conditions from merged
+config and the worktree; there is nothing to gate by hand.
 
-```bash
-cat "$AP/skills/autopilot/references/dispatch/plan-budget.md" >> "$A"
-```
-
-The dispatch prompt also carries a **minimalism ladder** — but only when
-`minimalism.mode` is `lite` or `full`, read from the same two config layers as
-everywhere else, with absent meaning `off`. **When `minimalism.mode` is `off`,
-include nothing from the minimalism ladder in the dispatch prompt.** The budget
-says *how many* tasks; this says *which tasks are worth planning at all*.
-
-At `lite`, append the first file; at `full`, append both, in this order:
-
-```bash
-cat "$AP/skills/autopilot/references/dispatch/plan-minimalism-lite.md" >> "$A"
-cat "$AP/skills/autopilot/references/dispatch/plan-minimalism-full.md" >> "$A"
-```
-
-This ladder governs task decomposition only — `sdd` carries a separate
+The plan ladder governs task decomposition only — `sdd` carries a separate
 minimalism contract about how code gets written, and the two must not be
 collapsed.
-
-The dispatch prompt also carries a learnings instruction. The plan agent is the
-one consumer of the run's accumulated learnings; every other stage is
-deliberately learnings-free:
-
-```bash
-cat "$AP/skills/autopilot/references/dispatch/plan-learnings.md" >> "$A"
-```
 
 #### Derive the verify recipe
 
@@ -348,71 +355,27 @@ Append: `plan complete → <path> (<n> tasks)`.
 Dispatch the `implement` role to run `superpowers:subagent-driven-development`
 against the plan.
 
+```bash
+node "$AP/scripts/autopilot-dispatch.mjs" sdd \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path> \
+  --plan-path=<path-to-plan>
+```
+
+Dispatch by the printed path.
+
 SDD picks models by its own judgment and cannot accept an externally supplied
-map, so the dispatch prompt must override that with a literal mapping:
-
-```bash
-cat "$AP/skills/autopilot/references/dispatch/sdd-model-map.md" >> "$A"
-```
-
-Then append a rendered table of the six roles' actual `model` and `effort`
-values, read from `.claude/autopilot.json` at dispatch time, so the dispatched
-agent never has to consult the config itself:
-
-```bash
-cat >> "$A" <<'EOF'
-
-Values for this run:
-
-| Role | model | effort |
-|---|---|---|
-| `implement` | <value> | <value> |
-| `implement_complex` | <value> | <value> |
-| `task_review` | <value> | <value> |
-| `re_review` | <value> | <value> |
-| `fix_escalation` | <value> | <value> |
-| `final_review` | <value> | <value> |
-EOF
-```
-
-The prompt also carries a verification contract, which stops the stage agent
-narrating its own verification into the developer's transcript, and a findings
-capture contract, which stops SDD's review findings being discarded:
-
-```bash
-cat "$AP/skills/autopilot/references/dispatch/sdd-verification.md" >> "$A"
-cat "$AP/skills/autopilot/references/dispatch/sdd-findings.md" >> "$A"
-```
+map, so the composed definition overrides that with a literal mapping plus a
+rendered table of the six roles' actual `model` and `effort` values, read from
+merged config at compose time. It also carries a verification contract, which
+stops the stage agent narrating its own verification into the developer's
+transcript, and a findings capture contract, which stops SDD's review findings
+being discarded — and a minimalism contract when `minimalism.mode` is `lite` or
+`full`.
 
 The verification contract reduces transcript noise; it does not eliminate it.
 SDD's own nested dispatches still render their tool calls.
-
-The prompt also carries a **minimalism contract** — but only when
-`minimalism.mode` is `lite` or `full`, read from the same two config layers as
-the `roles` block. Absent means `off`. **When `minimalism.mode` is `off`,
-include nothing from the minimalism contract in the dispatch prompt.** That is
-the default: the prompt stays byte-identical to one composed before the key
-existed.
-
-At `lite`, append the first file; at `full`, append both, in this order:
-
-```bash
-cat "$AP/skills/autopilot/references/dispatch/sdd-minimalism-lite.md" >> "$A"
-cat "$AP/skills/autopilot/references/dispatch/sdd-minimalism-full.md" >> "$A"
-```
-
-The mode grades the **intensity**, not the correctness: `full` is not
-permission to skip what the task requires, and `lite` is not permission to
-over-build. The scoping instruction and the plan-governs rule inside the
-fragment are unconditional — they go into the prompt in both modes.
-
-Answer these gates from config rather than asking:
-
-| Gate | Answer |
-|---|---|
-| `writing-plans` execution choice | `subagent-driven` |
-| SDD pre-flight plan-conflict scan | Resolve; log each resolution to the ledger |
-| SDD plan-vs-review contradiction | Plan governs; log to the ledger |
 
 SDD reporting BLOCKED is not answered from config. It parks.
 
@@ -501,11 +464,21 @@ different responses:
 | 3 | No `(ui)` criteria | Skip, as above |
 | 4 | Cannot verify despite `(ui)` criteria — no usable recipe, or `@playwright/test` absent | **Park** |
 
-**The fix round.** On exit 1, dispatch the `implement` role with the failing
-criteria and the summarized failures — not the raw report — then re-run the
-script **with `--round=2`**:
+**The fix round.** On exit 1, write the summarized failures — not the raw
+report — to a file, compose the fix-round dispatch, dispatch by the printed
+path, then re-run the script **with `--round=2`**:
 
 ```bash
+cat > .superpowers/autopilot/<run>/verify/failures.md <<'EOF'
+<the summarized failures>
+EOF
+node "$AP/scripts/autopilot-dispatch.mjs" verify-fix \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path> \
+  --failing-criteria="AC3, AC5" \
+  --failures=@.superpowers/autopilot/<run>/verify/failures.md
+
 node "$AP/scripts/autopilot-verify.mjs" run \
   --config=.claude/autopilot.json \
   --run-dir=.superpowers/autopilot/<run>/verify \
@@ -544,11 +517,14 @@ and reads: `sdd` and `verify` both capture findings, the learnings role
 distills them into planning rules, and the next run's `plan` stage reads the
 doc.
 
-The dispatch prompt carries the rewrite instructions:
-
 ```bash
-cat "$AP/skills/autopilot/references/dispatch/learnings.md" >> "$A"
+node "$AP/scripts/autopilot-dispatch.mjs" learnings \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path>
 ```
+
+Dispatch by the printed path.
 
 A `learnings`-stage failure does not park. Log it and continue: append
 `learnings failed — <reason>` and proceed to `land`. Only a successful commit
@@ -559,8 +535,10 @@ Append: `learnings committed → docs/autopilot/learnings.md`.
 
 ### `land`
 
-Run `node "$AP/scripts/autopilot-land.mjs" <base_ref>` from the repository
-root.
+Run `node "$AP/scripts/autopilot-land.mjs" <base_ref> | tee .superpowers/autopilot/<run>/land.txt`
+from the repository root, capturing its output. The `conflict` outcome below
+reuses this capture — re-running the script here would hit a rebase already in
+progress and misreport the error as the conflict list.
 
 **If `test_command` is not set, park immediately** — before rebasing. Without
 it there is no way to tell a landed branch from a broken one, and the whole
@@ -570,11 +548,22 @@ absent test command as a pass.
 
 - `clean` — run `test_command`. Green, append
   `rebase clean, tests green (<n> passed)` and continue. Red, park.
-- `conflict` — dispatch the `implement` role to resolve. It resolves only what
-  it can reason about confidently: both sides independent, one side a clear
-  superset, import-list merges. Anything where both sides changed the same
-  logic, it parks. Then re-run the land script to confirm clean, then run
-  `test_command`. Only green continues.
+- `conflict` — write the conflicted paths to a file, compose the resolver, and
+  dispatch by the printed path:
+
+  ```bash
+  node "$AP/scripts/autopilot-dispatch.mjs" land-conflict \
+    --run=<run> \
+    --config=.claude/autopilot.json \
+    --worktree=<worktree path> \
+    --base-ref=<config.base_ref> \
+    --conflicts=@.superpowers/autopilot/<run>/land.txt
+  ```
+
+  It resolves only what it can reason about confidently and reports anything
+  where both sides changed the same logic as unresolved; that parks. Then
+  re-run the land script to confirm clean, then run `test_command`. Only green
+  continues.
 - `error` — park.
 
 The test run after the rebase is not optional. Semantic conflicts rebase
@@ -584,9 +573,16 @@ branch is broken. The suite is the only thing that catches this.
 
 ### `pr`
 
-Dispatch the `implement` role to run
-`superpowers:finishing-a-development-branch`, answering its menu with option 2
-(push and create a PR). It handles the push and `gh pr create` itself.
+```bash
+node "$AP/scripts/autopilot-dispatch.mjs" pr \
+  --run=<run> \
+  --config=.claude/autopilot.json \
+  --worktree=<worktree path>
+```
+
+Dispatch by the printed path. It runs
+`superpowers:finishing-a-development-branch`, answering the menu with option 2
+(push and create a PR), and handles the push and `gh pr create` itself.
 
 Append `pr: <url>` **first**, then read the timing back out of the ledger —
 appending first is what makes the PR entry the last timestamp, so the span
@@ -685,8 +681,9 @@ Never check for it, never wait on it.
 |---|---|
 | "The spec is approved, I can skip preflight" | Preflight runs before the brainstorm. A missing skill gets improvised into plausible output that skipped the process. |
 | "I'll read the plan to check the work" | Stage outputs stay in files. Reading them into your context is what causes the compaction this design defends against. |
-| "I'll read the dispatch fragment to make sure it fits" | `cat` delivers it whether or not you have read it. Reading one spends the context the fragment file exists to save. |
-| "I'll paraphrase the contract into the prompt, it's shorter" | A reworded contract is a different contract. The fragments are verbatim because their exact phrasing is what binds. |
+| "I'll peek at the definition before dispatching" | The script already composed it. Reading the file spends exactly the context the script exists to save, and there is nothing in it you can act on. |
+| "The script errored, but I know what the prompt should say — I'll write it" | A hand-written prompt is a different contract. A stage dispatched without its contract produces plausible work that skipped the process, and reports success. |
+| "I'll paraphrase the contract into the prompt, it's shorter" | You do not write the prompt. `autopilot-dispatch.mjs` does, from verbatim fragments, because their exact phrasing is what binds. |
 | "The rebase was clean, tests will pass" | Semantic conflicts rebase clean and break the branch. Run the suite. |
 | "No `test_command` is configured, so there's nothing to run — continue" | An unverifiable branch is not a passing one. Park and say the key is missing. |
 | "I'll infer the test command from package.json" | A guess that exits 0 for the wrong reason reads as green. The project states it, or the run parks. |

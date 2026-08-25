@@ -9,10 +9,12 @@
 // dispatch actually carries, and that the ledger strings it prescribes still
 // match `nextStage`.
 //
-// `section` resolves the `references/dispatch/*.md` fragments a stage names,
-// inlining each where it is named. The browser-verification contract now
-// travels to the dispatched agent by `cat` rather than as inline prose, so
-// following that route is what keeps these assertions meaning what they meant.
+// This file mixes both kinds of assertion, so it reads two artifacts. The
+// browser-verification contract travels to the dispatched agent through
+// `autopilot-dispatch.mjs`, so assertions about it compose the stage the way a
+// dispatch does. The gate, the outcome table, the park conditions and the
+// recipe rules are orchestrator-facing and stay pinned against SKILL.md and
+// the reference file it names.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -21,12 +23,14 @@ import { dirname, join } from "node:path";
 import { parseLedger, nextStage } from "./autopilot-ledger.mjs";
 import { EXIT, RECIPE_KEYS } from "./autopilot-verify.mjs";
 import { readSkill, sectionOf as section, unwrap } from "./skill-sections.mjs";
+import { composeStage } from "./dispatch-fixture.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GITHUB_SKILL_PATH = join(HERE, "..", "skills", "autopilot-github", "SKILL.md");
 
 const skill = readSkill();
 const verify = unwrap(section(skill, "verify"));
+const verifyPrompt = unwrap(composeStage("verify"));
 const whole = unwrap(skill);
 
 describe("verify stage placement", () => {
@@ -52,26 +56,26 @@ describe("verify stage placement", () => {
 
 describe("verify token contract", () => {
   it("forbids reading a full DOM or accessibility dump", () => {
-    expect(verify).toMatch(/never read a full-page dom or accessibility dump/i);
+    expect(verifyPrompt).toMatch(/never read a full-page dom or accessibility dump/i);
   });
 
   it("names the scoped, grepped snapshot as the only escape hatch", () => {
-    expect(verify).toMatch(/ariaSnapshot/);
-    expect(verify).toMatch(/grep/i);
+    expect(verifyPrompt).toMatch(/ariaSnapshot/);
+    expect(verifyPrompt).toMatch(/grep/i);
   });
 
   it("forbids reading screenshots and the raw results file back", () => {
-    expect(verify).toMatch(/never read a screenshot back/i);
-    expect(verify).toMatch(/never read `results\.json` whole/i);
+    expect(verifyPrompt).toMatch(/never read a screenshot back/i);
+    expect(verifyPrompt).toMatch(/never read `results\.json` whole/i);
   });
 
   it("tells the agent to derive locators from worktree source", () => {
-    expect(verify).toMatch(/derive locators from the worktree source/i);
-    expect(verify).toMatch(/getByRole/);
+    expect(verifyPrompt).toMatch(/derive locators from the worktree source/i);
+    expect(verifyPrompt).toMatch(/getByRole/);
   });
 
   it("forbids the agent authoring a playwright config the script generates", () => {
-    expect(verify).toMatch(/do not write a playwright config/i);
+    expect(verifyPrompt).toMatch(/do not write a playwright config/i);
   });
 });
 
@@ -89,22 +93,27 @@ describe("verify prerequisites", () => {
   });
 
   it("explains how out-of-tree specs resolve the project's modules", () => {
-    expect(verify).toMatch(/symlinks the project's `node_modules`/i);
+    // This one is agent-facing: it tells the verify role not to work around
+    // resolution with absolute imports, so it travels in the dispatch.
+    expect(verifyPrompt).toMatch(/symlinks the project's `node_modules`/i);
   });
 });
 
 describe("verify artifact placement", () => {
   it("keeps specs and fixtures in the run directory, out of the repository", () => {
-    expect(verify).toMatch(/main checkout/i);
+    // The run-directory path is orchestrator-facing — it is what the
+    // orchestrator passes as `--verify-dir`; the placement rule itself is what
+    // the dispatched agent is told.
     expect(verify).toContain(".superpowers/autopilot/<run>/verify/");
-    expect(verify).toMatch(/nothing is committed/i);
+    expect(verifyPrompt).toMatch(/main checkout/i);
+    expect(verifyPrompt).toMatch(/nothing is committed/i);
   });
 
   // Same harness constraint the ledger documents: Write/Edit cannot reach the
   // main checkout from a worktree session, but Bash redirects can.
   it("names the Bash heredoc as how spec files get written", () => {
-    expect(verify).toMatch(/cannot write or edit into the main checkout/i);
-    expect(verify).toMatch(/heredoc/i);
+    expect(verifyPrompt).toMatch(/cannot write or edit into the main checkout/i);
+    expect(verifyPrompt).toMatch(/heredoc/i);
   });
 });
 
@@ -128,7 +137,7 @@ describe("verify outcomes", () => {
   });
 
   it("treats an uncovered criterion as a failure, not a pass", () => {
-    expect(verify).toMatch(/not covered.*not a pass|is a failure of this stage/i);
+    expect(verifyPrompt).toMatch(/not covered.*not a pass|is a failure of this stage/i);
   });
 
   it("reuses the four existing stage_at_fault values and the seven fields", () => {
@@ -200,7 +209,7 @@ describe("verify gating", () => {
 });
 
 describe("spec stage supplies the criteria verify reads", () => {
-  const spec = unwrap(section(skill, "spec"));
+  const spec = unwrap(composeStage("spec"));
 
   it("requires an acceptance criteria section", () => {
     expect(spec).toContain("## Acceptance criteria");

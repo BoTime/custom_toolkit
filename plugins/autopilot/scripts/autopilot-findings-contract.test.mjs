@@ -1,26 +1,29 @@
-// SKILL.md's `sdd` section carries a findings-capture contract: SDD's review
-// roles must append one JSON line per finding, plus an explicit clean line per
+// The `sdd` dispatch carries a findings-capture contract: SDD's review roles
+// must append one JSON line per finding, plus an explicit clean line per
 // passing task. The contract is prose, so nothing else fails if it is deleted
 // or reworded past recognition — findings would simply stop being recorded and
 // the corpus would silently stay empty, which is indistinguishable from a run
 // where nothing went wrong.
 //
-// This test reads SKILL.md and asserts the load-bearing pieces are present
-// within the `sdd` section, where a dispatched agent will actually read them.
+// This test composes the `sdd` stage the way a dispatch does and asserts the
+// load-bearing pieces are present in what it carries, where a dispatched agent
+// will actually read them. The run-directory rules stay in SKILL.md, and the
+// assertions about those keep reading it.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { STAGES } from "./autopilot-findings.mjs";
-import { readSkill, sectionOf, unwrap } from "./skill-sections.mjs";
+import { readSkill, unwrap } from "./skill-sections.mjs";
+import { composeStage } from "./dispatch-fixture.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 const skill = readSkill();
-// Resolves the `references/dispatch/*.md` fragments the section names — the
-// contract reaches the dispatched agent by `cat` now, and this follows it.
-const section = unwrap(sectionOf(skill, "sdd"));
+// The composed definition, exactly as a dispatch would carry it — the route
+// the contract reaches the dispatched agent by.
+const section = unwrap(composeStage("sdd"));
 
 describe("sdd findings-capture contract", () => {
   it("names the corpus file and its main-checkout placement", () => {
@@ -62,13 +65,13 @@ describe("sdd findings-capture contract", () => {
     expect(section).toMatch(/bad input|produced the/i);
   });
 
-  it("keeps the capture contract inside the sdd section, not merely in the file", () => {
+  it("keeps the capture contract inside the sdd dispatch, not merely in the file", () => {
     expect(section).toMatch(/findings capture contract/i);
   });
 
   it("does not weaken the existing verification contract", () => {
     // The verification contract and the capture contract coexist in this
-    // section. Adding one must not displace the other.
+    // dispatch. Adding one must not displace the other.
     expect(section).toMatch(/verification contract/i);
   });
 });
