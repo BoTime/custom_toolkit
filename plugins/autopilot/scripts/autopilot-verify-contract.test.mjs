@@ -14,8 +14,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseLedger, nextStage } from "./autopilot-ledger.mjs";
-import { EXIT } from "./autopilot-verify.mjs";
-import { BROWSER_KEYS } from "./autopilot-config.mjs";
+import { EXIT, RECIPE_KEYS } from "./autopilot-verify.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
@@ -110,6 +109,7 @@ describe("verify prerequisites", () => {
   it("names @playwright/test as the project's responsibility", () => {
     expect(verify).toMatch(/@playwright\/test/);
     expect(verify).toMatch(/resolvable from the project/i);
+    expect(verify).toMatch(/exit 4/i);
   });
 
   // A run that installs its own tooling produces a green nobody can reproduce,
@@ -154,9 +154,15 @@ describe("verify outcomes", () => {
     expect(verify).toMatch(/not covered.*not a pass|is a failure of this stage/i);
   });
 
-  it("reuses the four existing stage_at_fault values", () => {
+  it("reuses the four existing stage_at_fault values and the seven fields", () => {
     expect(verify).toMatch(/invent no new value/i);
     expect(verify).toContain("findings.jsonl");
+    expect(verify).toContain('"task": 0, "clean": true');
+    for (const field of [
+      "task", "round", "severity", "stage_at_fault", "pattern", "detail", "verdict",
+    ]) {
+      expect(verify).toContain(field);
+    }
   });
 
   it("documents every exit code the script can return", () => {
@@ -167,17 +173,44 @@ describe("verify outcomes", () => {
 });
 
 describe("verify gating", () => {
-  it("skips an unconfigured project but parks a half-configured one", () => {
-    expect(verify).toMatch(/skipped \(browser not configured\)/);
-    expect(verify).toMatch(/browser config incomplete/);
+  // The one-sentence enablement answer. A feature whose activation rule is
+  // only inferable from source is one most users never knowingly turn on.
+  it("says a (ui) acceptance criterion is what turns the stage on", () => {
+    expect(verify).toMatch(/writing a `?\(ui\)`? acceptance criterion/i);
+    expect(verify).toMatch(/nothing to configure|no flag/i);
+  });
+
+  it("skips a spec with no ui criteria and parks one that cannot be verified", () => {
+    expect(verify).toMatch(/skipped \(no ui criteria\)/);
+    expect(verify).toMatch(/PARKED — verify cannot run/);
   });
 
   it("explains why a skip must still append a ledger line", () => {
     expect(verify).toMatch(/back through `?verify`? forever|forever/i);
   });
 
-  it("names the browser keys the project must supply", () => {
-    for (const key of BROWSER_KEYS) expect(verify).toContain(key);
+  it("names the recipe the plan stage derived and its required keys", () => {
+    expect(verify).toContain(".superpowers/autopilot/<run>/verify/recipe.json");
+    for (const key of RECIPE_KEYS) expect(verify).toContain(key);
+    expect(verify).toContain("stop_command");
+    expect(verify).toContain("seed_command");
+  });
+
+  // Both lifecycle corrections. Neither is checkable from code alone: the
+  // section is what tells a resuming orchestrator not to "fix" them.
+  it("says a clean dev_command exit is setup finishing, not a death", () => {
+    expect(verify).toMatch(/clean `?dev_command`? exit means setup finished/i);
+    expect(verify).toMatch(/only a non-zero exit is a failure/i);
+  });
+
+  it("says teardown runs stop_command in a finally", () => {
+    expect(verify).toMatch(/`stop_command` in a `finally`/);
+    expect(verify).toMatch(/falling back to killing the process group/i);
+  });
+
+  it("says the base url is resolved in the worktree after dev_command", () => {
+    expect(verify).toMatch(/in the worktree, after `?dev_command`?/i);
+    expect(verify).toMatch(/never written down|never persisted/i);
   });
 });
 
@@ -261,7 +294,7 @@ describe("parking conditions include the verify failures", () => {
 
   it("lists each verify park reason", () => {
     expect(parking).toMatch(/no usable `## Acceptance criteria` section/i);
-    expect(parking).toMatch(/half-configured/i);
+    expect(parking).toMatch(/cannot be verified/i);
     expect(parking).toMatch(/dev server never answered/i);
     expect(parking).toMatch(/still failing after the one fix round/i);
   });

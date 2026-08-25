@@ -89,11 +89,6 @@ missing and stop — do not start the brainstorm.
      `land` will park instead of reporting tests green. Say so plainly before
      starting the brainstorm; the fix is one key in the project's
      `.claude/autopilot.json`.
-   - **`browser` half-configured** — the project supplied some of
-     `dev_command` / `base_url` but not all, so `verify` will park rather than
-     check UI criteria. A project that supplied neither never opted into
-     browser verification and produces no warning; that is the normal case for
-     a repository with no frontend.
    - `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
      effort level.
 
@@ -472,6 +467,10 @@ which previously arrived too late to be distilled at all.
 
 #### Whether to run at all
 
+**Writing a `(ui)` acceptance criterion in the spec turns this stage on.**
+There is no flag, no path glob, no auto-detection heuristic, and nothing to
+configure.
+
 Read the criteria out of the committed spec:
 
 ```bash
@@ -484,24 +483,52 @@ spec has no `## Acceptance criteria` section or an item is untagged. Then:
 | Condition | Action |
 |---|---|
 | `ui` count is 0 | Append `verify: skipped (no ui criteria)` and go to `learnings` |
-| `browser` unconfigured in `.claude/autopilot.json` | Append `verify: skipped (browser not configured)` and go to `learnings` |
-| `browser` half-configured | **Park** — `PARKED — browser config incomplete: <keys>` |
+| `(ui)` criteria and a usable `recipe.json` | Run |
+| `(ui)` criteria, no usable `recipe.json` | **Park** — `PARKED — verify cannot run: <reason>` |
+| `(ui)` criteria, `@playwright/test` absent | **Park** — same line |
 | The criteria command exits non-zero | **Park** — the spec cannot state what done means |
 
-The skip lines are not optional bookkeeping. `nextStage` resumes at `learnings`
+The skip line is not optional bookkeeping. `nextStage` resumes at `learnings`
 by matching an entry starting `verify`, so a stage that skips silently sends
 every later resume back through `verify` forever.
 
-An unconfigured project skipping is correct — most repositories have no
-frontend. A *half*-configured one parking is equally deliberate: it means
-someone meant to enable this and left it broken, and reporting that run as
-verified is exactly the false green the `test_command` rule exists to prevent.
+A backend repo therefore costs nothing: it writes no `(ui)` criteria and this
+stage never speaks. The two parks are the deliberate part. A criterion with no
+test is a failure, not a pass — so a run that declared UI criteria and then
+could not open a browser must not report success. Skipping there would report
+green on the exact gap this stage exists to close.
+
+#### The recipe the `plan` stage derived
+
+The commands come from `.superpowers/autopilot/<run>/verify/recipe.json` in the
+**main checkout**, written by the `plan` stage by reading the project the way a
+new contributor would. Nothing here is configured by hand:
+
+```json
+{
+  "dev_command":      "bash scripts/worktree-up.sh",
+  "base_url_command": "grep '^WEB_ORIGIN=' apps/api/.env | cut -d= -f2-",
+  "stop_command":     "bash scripts/worktree-down.sh",
+  "seed_command":     "npm run db:seed:test"
+}
+```
+
+`dev_command` and `base_url_command` are required; `stop_command` and
+`seed_command` are optional. Do not write this file at this stage and do not
+patch it by hand — a recipe that verify repaired for itself would hide the
+derivation bug rather than surfacing it as a park.
+
+`base_url_command` runs **in the worktree, after `dev_command`**, and its
+trimmed stdout is the base URL. It is never written down and never persisted: a
+worktree-up script that derives ports from the worktree name and reassigns them
+when a block is occupied cannot state its URL in advance, and a static one is
+wrong on the second concurrent run.
 
 #### What the project must already have
 
 `@playwright/test` resolvable from the project, and its browsers installed.
-The script checks this before it starts anything and returns the
-infrastructure exit if it is missing.
+The script checks this before it starts anything and returns exit 4 if it is
+missing.
 
 **Autopilot never installs it.** A background `npx playwright install` on an
 unattended run downloads hundreds of megabytes into a developer's machine
@@ -564,15 +591,20 @@ Then run the checks:
 node "$AP/scripts/autopilot-verify.mjs" run \
   --config=.claude/autopilot.json \
   --run-dir=.superpowers/autopilot/<run>/verify \
-  --cwd=<worktree path>
+  --cwd=<worktree path> \
+  --spec=<path-to-spec>
 ```
 
-The script owns everything mechanical: it generates the Playwright config,
-runs the optional `seed` command, starts `dev_command` in its own process
-group, polls `base_url` until it answers or `ready_timeout_ms` expires, runs
-the specs, and tears the whole process tree down. Do not start a dev server by
-hand, and do not check the port yourself — a stray server from a hand-started
-run holds the port and makes the next run look broken.
+The script owns everything mechanical: it reads the recipe, runs the optional
+`seed_command`, starts `dev_command` in its own process group, resolves the base
+URL with `base_url_command`, generates the Playwright config, polls the URL
+until it answers or `ready_timeout_ms` (default 120000) expires, runs the specs,
+and tears the stack down with `stop_command` in a `finally` — falling back to
+killing the process group only when the recipe supplies no stop command. A
+clean `dev_command` exit means setup finished, not that the server died; only a
+non-zero exit is a failure. Do not start a dev server by hand, and do not check
+the port yourself — a stray server from a hand-started run holds the port and
+makes the next run look broken.
 
 #### Outcomes
 
@@ -584,8 +616,8 @@ different responses:
 | 0 | Every criterion passed | Append `verify: <n>/<n> ui criteria passed` and continue |
 | 1 | A criterion failed | One fix round, below |
 | 2 | Infrastructure — server never answered, no report produced | **Park.** Not a fix round: the branch was never exercised |
-| 3 | Browser unconfigured | Skip, as above |
-| 4 | Browser half-configured | **Park** |
+| 3 | No `(ui)` criteria | Skip, as above |
+| 4 | Cannot verify despite `(ui)` criteria — no usable recipe, or `@playwright/test` absent | **Park** |
 
 **The fix round.** On exit 1, dispatch the `implement` role with the failing
 criteria and the summarized failures — not the raw report — then re-run the
@@ -595,12 +627,20 @@ script. Green continues. Still red parks:
 One round, mirroring `land`'s conflict resolver: one dispatched attempt, then a
 human decides. A stage that retries until green tunes the test to the bug.
 
-A failing criterion is a real finding, so append it to
-`.superpowers/autopilot/<run>/findings.jsonl` under the existing contract, with
-`stage_at_fault` drawn from the same four values — `implementation` when the UI
-does not do what the criterion says, `spec` when the criterion turned out to be
-ambiguous or untestable as written. Invent no new value; the learnings analyzer
-clusters on the four it knows.
+The script appends the findings itself, to
+`.superpowers/autopilot/<run>/findings.jsonl` in the **main checkout**, under
+the existing seven-field contract — `task`, `round`, `severity`,
+`stage_at_fault`, `pattern`, `detail`, `verdict` — with `task: 0` as the
+sentinel for "not a numbered SDD task", and `{"task": 0, "clean": true}` when
+every criterion passed. `stage_at_fault` stays inside the same four values:
+`implementation` when the UI does not do what the criterion says, `spec` when
+the criterion turned out to be ambiguous as written. Invent no new value — and
+in particular no `verify` value: the field names the stage that produced the
+bad input, never the stage that surfaced it. Do not append these lines
+yourself; the script has already written them.
+
+`learnings` now runs immediately after this stage, which is what lets it read
+browser evidence and review evidence in one pass.
 
 Append: `verify: <n>/<n> ui criteria passed`.
 
@@ -742,7 +782,8 @@ partner plainly that the run needs a decision, and stop.
 - Tests red after rebase
 - `test_command` not set, so the branch cannot be verified
 - The spec carries no usable `## Acceptance criteria` section
-- `browser` half-configured, so UI criteria cannot be checked
+- UI criteria were declared but cannot be verified — no usable verify recipe,
+  or `@playwright/test` is absent
 - Browser verification infrastructure failed — the dev server never answered,
   or Playwright produced no report
 - UI criteria still failing after the one fix round
@@ -784,7 +825,7 @@ Never check for it, never wait on it.
 | "Let me restate the design before I start Phase 2" | The clarifying questions already collected every decision. Re-presenting asks your human partner to approve their own answers and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
 | "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the brainstorm hands the design back. |
 | "The tests are green, so the feature works" | The suite proves the code does what the code says. A UI criterion is verified by opening it. That is what `verify` is for. |
-| "No `browser` config, so I'll just start the dev server myself and look" | A hand-started server holds the port after the run and makes the next one look broken. Unconfigured skips; half-configured parks. |
+| "No verify recipe, so I'll just start the dev server myself and look" | A hand-started server holds the port after the run and makes the next one look broken. No `(ui)` criteria skips; a `(ui)` criterion with no recipe parks. |
 | "Verification failed but I can see the fix — I'll patch it here" | Controller fixes skip review. The fix round is a dispatch, and there is exactly one. |
 | "One criterion has no test, but everything that ran passed" | Not covered is not passed. An uncovered criterion is this stage failing to do its job, and it is weighted as a failure. |
 | "I'll snapshot the page to find the right selector" | The run wrote the component. Read it. A full-page dump costs more context than the whole stage budget. |

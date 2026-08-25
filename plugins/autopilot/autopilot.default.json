@@ -17,7 +17,7 @@
   "reaper": true,
   "findings_threshold": 2,
   "browser": {
-    "ready_timeout_ms": 60000
+    "ready_timeout_ms": 120000
   },
   "github": {
     "status_field": "Status",

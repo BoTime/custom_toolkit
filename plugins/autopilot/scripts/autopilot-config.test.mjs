@@ -413,3 +413,55 @@ describe("shipped autopilot.default.json", () => {
     expect(defaults.roles.learnings).toEqual({ model: "opus", effort: "high" });
   });
 });
+
+describe("browser config is one policy knob and nothing else", () => {
+  // Every other browser fact — the dev command, the URL, the seed — is now
+  // derived per run into the verify recipe. A timeout cannot be: how long a
+  // human is willing to wait before calling a stack dead cannot be read off
+  // package.json.
+  it("exports no browser key list any more", async () => {
+    const mod = await import("./autopilot-config.mjs");
+    expect(mod.BROWSER_KEYS).toBeUndefined();
+    expect(mod.validateBrowserConfig).toBeUndefined();
+    expect(mod.browserConfigured).toBeUndefined();
+  });
+
+  it("ships a two-minute default, because a docker stack is not up in sixty seconds", () => {
+    const defaults = JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), "..", "autopilot.default.json"),
+        "utf8",
+      ),
+    );
+    expect(defaults.browser).toEqual({ ready_timeout_ms: 120000 });
+  });
+
+  it("keeps the default timeout when a project overrides nothing in browser", () => {
+    const merged = mergeConfig(
+      { ...validConfig(), browser: { ready_timeout_ms: 120000 } },
+      { test_command: "npm test" },
+    );
+    expect(merged.browser).toEqual({ ready_timeout_ms: 120000 });
+  });
+
+  it("lets a project raise the timeout", () => {
+    const merged = mergeConfig(
+      { ...validConfig(), browser: { ready_timeout_ms: 120000 } },
+      { browser: { ready_timeout_ms: 300000 } },
+    );
+    expect(merged.browser.ready_timeout_ms).toBe(300000);
+  });
+
+  it("rejects a non-positive timeout", () => {
+    const result = validateConfig({ ...validConfig(), browser: { ready_timeout_ms: 0 } }, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("browser.ready_timeout_ms: must be a positive integer");
+  });
+
+  // There is nothing to half-configure any more, so a browser block must never
+  // produce a warning — a backend repo would otherwise be nagged every run.
+  it("warns about nothing in the browser block", () => {
+    const result = validateConfig({ ...validConfig(), browser: { ready_timeout_ms: 120000 } }, {});
+    expect(result.warnings.join("\n")).not.toMatch(/browser/);
+  });
+});

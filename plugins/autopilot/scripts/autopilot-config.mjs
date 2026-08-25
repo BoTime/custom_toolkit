@@ -32,43 +32,6 @@ export function validateGithubConfig(config) {
   });
 }
 
-/**
- * The `browser` keys the `verify` stage needs before it can drive a browser.
- *
- * Deliberately NOT part of `TOP_LEVEL` below, and deliberately not defaulted
- * in `autopilot.default.json`, for the same reason `test_command` has no
- * default: a guessed dev command that serves the wrong thing renders as a
- * verified feature. A project without a frontend supplies neither key and the
- * `verify` stage skips; a project with one supplies both or the stage parks.
- *
- * `ready_timeout_ms` is defaulted, because a timeout has a safe generic value
- * and an absent one would just mean "wait forever".
- */
-export const BROWSER_KEYS = ["dev_command", "base_url"];
-
-/** Names the `browser` keys no config layer supplied. Empty means complete. */
-export function validateBrowserConfig(config) {
-  const browser = config?.browser;
-  if (!browser || typeof browser !== "object") return [...BROWSER_KEYS];
-  return BROWSER_KEYS.filter((key) => {
-    const value = browser[key];
-    return value === undefined || value === null || value === "";
-  });
-}
-
-/**
- * True when no `browser` key at all was supplied beyond the plugin's own
- * defaults — the signal that this project never opted into browser
- * verification, as opposed to opting in and misconfiguring it.
- *
- * The two cases get different treatment at the `verify` stage: unconfigured
- * skips, half-configured parks. Without this distinction a backend-only repo
- * would park on every run.
- */
-export function browserConfigured(config) {
-  return validateBrowserConfig(config).length < BROWSER_KEYS.length;
-}
-
 const TOP_LEVEL = ["worktree_dir", "base_ref", "reaper", "findings_threshold"];
 
 /**
@@ -97,9 +60,9 @@ export function mergeConfig(defaults, project) {
     merged.github = { ...defaults.github, ...(project.github ?? {}) };
   }
 
-  // Likewise for `browser`: a project supplying only `dev_command` and
-  // `base_url` would otherwise replace the block wholesale and lose the
-  // default `ready_timeout_ms`, leaving the verify stage with no timeout.
+  // Likewise for `browser`: a project overriding nothing in the block must
+  // still inherit the default `ready_timeout_ms`, leaving the verify stage
+  // with a budget rather than none.
   if (defaults.browser || project.browser) {
     merged.browser = { ...defaults.browser, ...(project.browser ?? {}) };
   }
@@ -168,20 +131,6 @@ export function validateConfig(obj, env) {
     (!Number.isInteger(timeout) || timeout < 1)
   ) {
     errors.push("browser.ready_timeout_ms: must be a positive integer");
-  }
-
-  // Half-configured browser support is a warning here and a park at the verify
-  // stage, never a silent skip. Skipping it would report a run as verified
-  // when no browser ever opened — the same false-green the test_command rule
-  // exists to prevent. Supplying neither key is the normal backend-repo case
-  // and says nothing at all.
-  const missingBrowser = validateBrowserConfig(obj);
-  if (missingBrowser.length > 0 && missingBrowser.length < BROWSER_KEYS.length) {
-    warnings.push(
-      `browser: ${missingBrowser.join(", ")} not set — the verify stage will ` +
-        "park instead of checking UI acceptance criteria. Set them in your " +
-        "project's .claude/autopilot.json",
-    );
   }
 
   const override = env.CLAUDE_CODE_EFFORT_LEVEL;
