@@ -145,28 +145,17 @@ describe("plugin packaging", () => {
   const pluginJson = JSON.parse(
     readFileSync(join(HERE, "..", ".claude-plugin", "plugin.json"), "utf8"),
   );
-  const marketplace = JSON.parse(
-    readFileSync(join(HERE, "..", "..", "..", ".claude-plugin", "marketplace.json"), "utf8"),
-  );
 
   it("registers the commands directory so the new command loads", () => {
     expect(pluginJson.commands).toEqual(["./commands/"]);
   });
 
-  it("is at version 1.7.0", () => {
-    expect(pluginJson.version).toBe("1.7.0");
-  });
-
-  it("bumps the marketplace plugin entry to the same version", () => {
-    const entry = marketplace.plugins.find((p) => p.name === "autopilot");
-    expect(entry.version).toBe("1.7.0");
-  });
-
-  it("bumps the marketplace metadata block too", () => {
-    // Two places in one file. Bumping only the plugin entry is the drift this
-    // pins.
-    expect(marketplace.metadata.version).toBe("1.7.0");
-  });
+  // No assertion pins the version literal here. scripts/bump-version.mjs now
+  // owns the version digits and rewrites them on every landing, so a pinned
+  // literal would red `main` on the first automated bump — and because the
+  // version job is gated on `needs: test`, the automation would then never run
+  // again. The lockstep invariant these assertions protected lives in
+  // scripts/bump-version.test.mjs, over all six fields instead of three.
 
   it("ships the findings command", () => {
     const command = readFileSync(
