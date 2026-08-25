@@ -484,6 +484,85 @@ A general instruction to "log findings" will not bind. The rules above name the
 concrete expected behavior for the same reason the verification contract's
 rules 2 and 3 do.
 
+The dispatch prompt also carries a **minimalism contract** — but only when
+`minimalism.mode` is `lite` or `full`. Read the mode from the merged config:
+the plugin's `autopilot.default.json` with the project's optional
+`.claude/autopilot.json` layered over it, the same two layers the `roles` block
+above comes from. Absent means `off`.
+
+**When `minimalism.mode` is `off`, include nothing from this subsection in the
+dispatch prompt.** That is the default, and it is what makes the feature unable
+to regress an existing run: the prompt stays byte-identical to one composed
+before the key existed.
+
+At `lite`, include text equivalent to:
+
+> Minimalism contract for this stage.
+>
+> **Scope: include this contract in implementer dispatches only** —
+> `implement` and `implement_complex`. **Do not include it in `task_review`,
+> `re_review` or `final_review` dispatches.** A reviewer told "the best code is
+> the code you never wrote" approves under-built work — it reads a thin
+> implementation as discipline rather than as a gap. Rigor is the entire point
+> of the review roles, and this contract is corrosive to it. All three review
+> roles are the same `general-purpose` agent type as the implementer, so this
+> instruction is the only mechanism that can scope them apart; there is no
+> matcher, no agent name and no config key that can do it for you.
+>
+> Minimalism ladder for implementation, in order:
+>
+> 1. **Don't write it.** The best code is the code you never wrote. If the
+>    task's outcome holds without new code, that is the implementation.
+> 2. **Extend what exists.** A parameter or a branch in a function that is
+>    already there beats a new module that does nearly the same thing.
+> 3. **Write the smallest thing that satisfies the task.** No options, hooks,
+>    or indirection with a single caller.
+> 4. **Generalize last, and only for a caller that exists today.** "We'll need
+>    it later" is not a caller.
+>
+> **Plan governs.** This ladder tells you how to build a task, never whether to
+> build it. Implement every task the plan states, including one you judge
+> unnecessary.
+>
+> When you judge a planned task unnecessary: **implement it anyway**, and
+> append one line to `findings.jsonl` with `stage_at_fault` set to `"plan"` and
+> the canonical `pattern` phrase `plan specified unnecessary work`. The line
+> carries all seven fields the findings capture contract above requires —
+> `task`, `round`, `severity`, `stage_at_fault`, `pattern`, `detail`,
+> `verdict` — or the analyzer drops it.
+>
+> ```
+> {"task":3,"round":1,"severity":"minor","stage_at_fault":"plan","pattern":"plan specified unnecessary work","detail":"the flag task 3 adds has no caller in this branch; implemented as planned","verdict":"IMPLEMENTED AS PLANNED"}
+> ```
+>
+> Skipping the task would contradict "Plan governs", desynchronize the branch
+> from the plan, and produce a review finding against you rather than against
+> the plan.
+
+At `full`, include everything above plus three further rungs:
+
+> 5. **Prefer the diff that removes lines.** Where two implementations both
+>    satisfy the task, take the one with fewer files, fewer exports and fewer
+>    branches. Deleting a code path the task makes dead is part of the task,
+>    not a separate cleanup.
+> 6. **No config key, flag or extension point without a named present-day
+>    consumer.** Every knob is a permanent branch in behavior and a permanent
+>    line in the test matrix.
+> 7. **No speculative error handling** for conditions the code as written
+>    cannot reach.
+
+The mode grades the **intensity**, not the correctness: `full` is not
+permission to skip what the task requires, and `lite` is not permission to
+over-build. The scoping instruction and the plan-governs rule are
+unconditional — they go into the prompt verbatim in both modes.
+
+The scoping instruction, not the ladder, is the load-bearing half. Letting an
+implementer skip a task it judged unnecessary would desynchronize the branch
+from the plan and cause a fix round; routing the judgment into `findings.jsonl`
+instead costs nothing, and the `learnings` stage already prioritizes findings
+with `stage_at_fault == "plan"`, so the signal reaches the one stage that can
+act on it next run.
+
 Answer these gates from config rather than asking:
 
 | Gate | Answer |
