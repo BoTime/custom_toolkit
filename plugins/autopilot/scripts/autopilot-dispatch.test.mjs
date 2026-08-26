@@ -14,7 +14,6 @@ import {
   readFragment,
   placeholdersIn,
   roleTable,
-  tierBudget,
   outputPath,
   main,
 } from "./autopilot-dispatch.mjs";
