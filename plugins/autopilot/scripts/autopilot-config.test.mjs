@@ -625,10 +625,14 @@ describe("the tiers block", () => {
   it("rejects a flattened tiers value rather than silently keeping the defaults", () => {
     // "tiers": 3 is the flattening a numeric block invites. Spreading a
     // non-object into the merge would produce an object that validates,
-    // losing the developer's intent without a word.
-    const { ok, errors } = validateConfig(mergeConfig(defaults(), { tiers: 3 }), {});
-    expect(ok).toBe(false);
-    expect(errors.join("\n")).toMatch(/^tiers:/m);
+    // losing the developer's intent without a word. `null` is included here
+    // because `??` would otherwise treat it the same as an absent key and
+    // silently default it — unlike every other malformed shape.
+    for (const bad of [3, "3", [], null]) {
+      const { ok, errors } = validateConfig(mergeConfig(defaults(), { tiers: bad }), {});
+      expect(ok).toBe(false);
+      expect(errors.join("\n")).toMatch(/^tiers:/m);
+    }
   });
 
   it("rejects an unknown tier name, naming it", () => {

@@ -91,17 +91,21 @@ export function mergeConfig(defaults, project) {
     merged.minimalism = { ...defaults.minimalism, ...(project.minimalism ?? {}) };
   }
 
-  // Likewise for `tiers`, with one addition: a non-object project value is
-  // carried through unmerged so validateConfig can reject it. Spreading a
-  // string or a number here would produce an object that validates while the
-  // developer's intent is gone.
+  // Likewise for `tiers`: absence defaults, but any present-and-malformed
+  // value — including an explicit `null` — is carried through unmerged so
+  // validateConfig can reject it. `??` would treat `null` the same as
+  // `undefined` and silently default it; the explicit `undefined` check below
+  // is what keeps `null` falling through to validation like every other
+  // malformed shape (a string, a number, an array).
   if (defaults.tiers || project.tiers) {
     const supplied = project.tiers;
     const isBlock =
       typeof supplied === "object" && supplied !== null && !Array.isArray(supplied);
     merged.tiers = isBlock
       ? { ...defaults.tiers, ...supplied }
-      : supplied ?? defaults.tiers;
+      : supplied === undefined
+        ? defaults.tiers
+        : supplied;
   }
 
   return merged;
