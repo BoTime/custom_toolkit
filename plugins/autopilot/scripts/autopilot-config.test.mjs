@@ -1,11 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
-  ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES,
+  ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES, TIERS,
   validateConfig, validateGithubConfig, mergeConfig, loadConfig,
 } from "./autopilot-config.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The real shipped defaults — the only thing that can answer AC1. */
+const defaults = () =>
+  JSON.parse(readFileSync(join(HERE, "..", "autopilot.default.json"), "utf8"));
 
 const validConfig = () => ({
   roles: {
@@ -584,5 +590,62 @@ describe("minimalism config", () => {
     const { config, warnings } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
     expect(config.minimalism).toBeUndefined();
     expect(warnings.join("\n")).not.toMatch(/minimalism/);
+  });
+});
+
+describe("the tiers block", () => {
+  it("names the three tiers in ceiling order", () => {
+    expect(TIERS).toEqual(["small", "standard", "large"]);
+  });
+
+  it("defaults to 1, 3 and 5 when the project supplies no tiers key", () => {
+    // AC1
+    const merged = mergeConfig(defaults(), {});
+    expect(merged.tiers).toEqual({ small: 1, standard: 3, large: 5 });
+  });
+
+  it("inherits the default ceiling for every key a partial block omits", () => {
+    // AC2 — the shallow top-level merge would otherwise drop small and large.
+    const merged = mergeConfig(defaults(), { tiers: { standard: 4 } });
+    expect(merged.tiers).toEqual({ small: 1, standard: 4, large: 5 });
+  });
+
+  it("rejects a ceiling that is not a positive integer, naming the key", () => {
+    // AC3
+    for (const bad of [0, -1, 2.5, "3", null]) {
+      const { ok, errors } = validateConfig(
+        mergeConfig(defaults(), { tiers: { standard: bad } }),
+        {},
+      );
+      expect(ok).toBe(false);
+      expect(errors.join("\n")).toMatch(/tiers\.standard/);
+    }
+  });
+
+  it("rejects a flattened tiers value rather than silently keeping the defaults", () => {
+    // "tiers": 3 is the flattening a numeric block invites. Spreading a
+    // non-object into the merge would produce an object that validates,
+    // losing the developer's intent without a word.
+    const { ok, errors } = validateConfig(mergeConfig(defaults(), { tiers: 3 }), {});
+    expect(ok).toBe(false);
+    expect(errors.join("\n")).toMatch(/^tiers:/m);
+  });
+
+  it("rejects an unknown tier name, naming it", () => {
+    // A typo'd tier key leaves that tier at its default ceiling, which is
+    // indistinguishable from never having configured the feature — the same
+    // reasoning the file already applies to minimalism.mode.
+    const { ok, errors } = validateConfig(
+      mergeConfig(defaults(), { tiers: { medium: 4 } }),
+      {},
+    );
+    expect(ok).toBe(false);
+    expect(errors.join("\n")).toMatch(/tiers\.medium/);
+  });
+
+  it("keeps loading a config that predates the key entirely", () => {
+    const config = defaults();
+    delete config.tiers;
+    expect(validateConfig(config, {}).ok).toBe(true);
   });
 });

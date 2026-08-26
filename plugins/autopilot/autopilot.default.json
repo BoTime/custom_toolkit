@@ -22,6 +22,11 @@
   "minimalism": {
     "mode": "off"
   },
+  "tiers": {
+    "small": 1,
+    "standard": 3,
+    "large": 5
+  },
   "github": {
     "status_field": "Status",
     "status_ready": "Ready",

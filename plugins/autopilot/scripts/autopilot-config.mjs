@@ -16,6 +16,16 @@ export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 export const MINIMALISM_MODES = ["off", "lite", "full"];
 
 /**
+ * The ceremony ladder, ordered by ceiling. A tier caps how far `plan` may
+ * decompose the work; it never selects which documents get written — `spec`
+ * and `plan` run on every tier.
+ *
+ * The order is load-bearing: escalation is one step up this list, derived by
+ * index rather than by a second hand-maintained map.
+ */
+export const TIERS = ["small", "standard", "large"];
+
+/**
  * The `github` keys the autopilot-github wrapper needs, in report order.
  *
  * Deliberately NOT part of `TOP_LEVEL` below: that list is a hard error on
@@ -79,6 +89,19 @@ export function mergeConfig(defaults, project) {
   // than silently losing it to the shallow top-level merge.
   if (defaults.minimalism || project.minimalism) {
     merged.minimalism = { ...defaults.minimalism, ...(project.minimalism ?? {}) };
+  }
+
+  // Likewise for `tiers`, with one addition: a non-object project value is
+  // carried through unmerged so validateConfig can reject it. Spreading a
+  // string or a number here would produce an object that validates while the
+  // developer's intent is gone.
+  if (defaults.tiers || project.tiers) {
+    const supplied = project.tiers;
+    const isBlock =
+      typeof supplied === "object" && supplied !== null && !Array.isArray(supplied);
+    merged.tiers = isBlock
+      ? { ...defaults.tiers, ...supplied }
+      : supplied ?? defaults.tiers;
   }
 
   return merged;
@@ -174,6 +197,32 @@ export function validateConfig(obj, env) {
     errors.push(
       `minimalism.mode: "${minimalismMode}" is not one of ${MINIMALISM_MODES.join(", ")}`,
     );
+  }
+
+  // Absent is not an error — every config that predates this key must keep
+  // loading, and an absent block means an untiered run, which composes the
+  // pre-tier budget. A present but malformed one is: a ceiling of 0 would
+  // instruct the plan agent to write no tasks at all.
+  const tiers = obj.tiers;
+  const tiersIsBlock =
+    typeof tiers === "object" && tiers !== null && !Array.isArray(tiers);
+  if (tiers !== undefined && !tiersIsBlock) {
+    errors.push(
+      `tiers: must be an object mapping ${TIERS.join(", ")} to positive integers`,
+    );
+  }
+  if (tiersIsBlock) {
+    for (const tier of TIERS) {
+      const ceiling = tiers[tier];
+      if (ceiling !== undefined && (!Number.isInteger(ceiling) || ceiling < 1)) {
+        errors.push(`tiers.${tier}: must be a positive integer`);
+      }
+    }
+    for (const key of Object.keys(tiers)) {
+      if (!TIERS.includes(key)) {
+        errors.push(`tiers.${key}: not one of ${TIERS.join(", ")}`);
+      }
+    }
   }
 
   const override = env.CLAUDE_CODE_EFFORT_LEVEL;
