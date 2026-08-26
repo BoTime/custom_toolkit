@@ -11,11 +11,14 @@ import {
   ROLE_TABLE_ROLES,
   compose,
   render,
+  readFragment,
   placeholdersIn,
   roleTable,
+  tierBudget,
   outputPath,
   main,
 } from "./autopilot-dispatch.mjs";
+import { composeStage, defaultConfig, dummyValues } from "./dispatch-fixture.mjs";
 
 /** A merged config shaped like loadConfig's output, with every role present. */
 function makeConfig(overrides = {}) {
@@ -28,7 +31,8 @@ function makeConfig(overrides = {}) {
     roles[role] = { model: `model-${role}`, effort: "high" };
   }
   return { roles, worktree_dir: ".claude/worktrees", base_ref: "origin/main",
-    reaper: true, findings_threshold: 2, ...overrides };
+    reaper: true, findings_threshold: 2,
+    tiers: { small: 1, standard: 3, large: 5 }, ...overrides };
 }
 
 /** A fragment reader that returns a marker naming the file it was asked for. */
@@ -119,6 +123,16 @@ describe("compose", () => {
     const fragmentReader = fakeFragments({ "pr-body.md": "no placeholders here" });
     const values = { run: "r1", config: ".claude/autopilot.json" };
     expect(() => compose({ ...base, stage: "pr", values, fragmentReader })).not.toThrow();
+  });
+
+  it("does not treat --tier and --tasks as unconsumed, but still rejects others", () => {
+    // AC7 — they select fragments rather than filling placeholders.
+    const fragmentReader = fakeFragments({ "pr-body.md": "no placeholders here" });
+    const values = { run: "r1", tier: "small", tasks: "1" };
+    expect(() => compose({ ...base, stage: "pr", values, fragmentReader })).not.toThrow();
+    expect(() =>
+      compose({ ...base, stage: "pr", values: { run: "r1", nonsense: "x" }, fragmentReader }),
+    ).toThrow(/--nonsense/);
   });
 
   it("names the fragment's relative path and the absolute path tried", () => {
@@ -343,5 +357,128 @@ describe("the STAGES table", () => {
       .filter(([, e]) => e.role === "implement")
       .map(([s]) => s);
     expect(implementStages.sort()).toEqual(["land-conflict", "pr", "sdd", "verify-fix"]);
+  });
+});
+
+describe("the plan tier gate", () => {
+  const composePlan = (values) =>
+    compose({
+      stage: "plan",
+      config: makeConfig(),
+      values: { run: "r", worktree: "/w", spec_path: "s", ...values },
+      fragmentReader: fakeFragments({ "plan-body.md": "{{run}}{{worktree}}{{spec_path}}" }),
+      worktreeHas: () => false,
+    });
+
+  it("selects exactly one tier budget, and only the named one", () => {
+    // AC4
+    for (const tier of ["small", "standard", "large"]) {
+      const out = composePlan({ tier });
+      expect(out).toContain(`FRAGMENT(plan-budget-${tier}.md)`);
+      for (const other of ["small", "standard", "large"].filter((t) => t !== tier)) {
+        expect(out).not.toContain(`FRAGMENT(plan-budget-${other}.md)`);
+      }
+      expect(out).not.toContain("FRAGMENT(plan-budget.md)");
+    }
+  });
+
+  it("composes the untiered budget when --tier is absent", () => {
+    const out = composePlan({});
+    expect(out).toContain("FRAGMENT(plan-budget.md)");
+    expect(out).not.toMatch(/plan-budget-(small|standard|large)\.md/);
+  });
+
+  it("rejects an unrecognised tier, naming the flag and all three values", () => {
+    // AC6 — a silent fallback would let a typo produce a run whose ceremony
+    // nobody chose.
+    expect(() => composePlan({ tier: "medium" })).toThrow(/--tier/);
+    expect(() => composePlan({ tier: "medium" })).toThrow(/small/);
+    expect(() => composePlan({ tier: "medium" })).toThrow(/standard/);
+    expect(() => composePlan({ tier: "medium" })).toThrow(/large/);
+  });
+
+  it("refuses to default a ceiling the merged config does not carry", () => {
+    const config = makeConfig();
+    delete config.tiers;
+    expect(() =>
+      compose({
+        stage: "plan",
+        config,
+        values: { run: "r", worktree: "/w", spec_path: "s", tier: "small" },
+        fragmentReader: fakeFragments({ "plan-body.md": "{{run}}{{worktree}}{{spec_path}}" }),
+        worktreeHas: () => false,
+      }),
+    ).toThrow(/tiers\.small/);
+  });
+});
+
+describe("the sdd review-depth gate", () => {
+  const composeSdd = (values) =>
+    compose({
+      stage: "sdd",
+      config: makeConfig(),
+      values: { run: "r", worktree: "/w", plan_path: "p", ...values },
+      fragmentReader: fakeFragments({ "sdd-body.md": "{{run}}{{worktree}}{{plan_path}}" }),
+      worktreeHas: () => false,
+    });
+
+  it("collapses the two reviews into one at exactly 1 task", () => {
+    // AC8
+    expect(composeSdd({ tasks: "1" })).toContain("FRAGMENT(sdd-review-single.md)");
+  });
+
+  it("keeps two-stage review at 2 tasks and when --tasks is absent", () => {
+    // AC8 — absence resolves toward more ceremony, never less.
+    expect(composeSdd({ tasks: "2" })).not.toContain("FRAGMENT(sdd-review-single.md)");
+    expect(composeSdd({})).not.toContain("FRAGMENT(sdd-review-single.md)");
+  });
+
+  it("rejects a --tasks value that is not a positive integer", () => {
+    // Not absence: a malformed value is a typo, and the module's rule is that
+    // defaulting is never the fallback.
+    expect(() => composeSdd({ tasks: "one" })).toThrow(/--tasks/);
+    expect(() => composeSdd({ tasks: "0" })).toThrow(/--tasks/);
+  });
+
+  it("orders the single-review fragment before the minimalism ladder", () => {
+    const out = compose({
+      stage: "sdd",
+      config: makeConfig({ minimalism: { mode: "lite" } }),
+      values: { run: "r", worktree: "/w", plan_path: "p", tasks: "1" },
+      fragmentReader: fakeFragments({ "sdd-body.md": "{{run}}{{worktree}}{{plan_path}}" }),
+      worktreeHas: () => false,
+    });
+    expect(out.indexOf("FRAGMENT(sdd-review-single.md)"))
+      .toBeLessThan(out.indexOf("FRAGMENT(sdd-minimalism-lite.md)"));
+  });
+});
+
+// The one block in this file that does touch the filesystem: AC5 pins the
+// untiered dispatch's actual bytes, which only the real fragments can carry.
+describe("the untiered plan dispatch", () => {
+  it("is byte-identical to the pre-tier assembly", () => {
+    // AC5. Rebuilds what the pre-tier compose() produced, from the same
+    // primitives, rather than restating the new selection logic — so this
+    // pins bytes and not the implementation that emits them.
+    const config = defaultConfig();
+    const values = dummyValues("plan");
+    const role = config.roles.plan;
+    const expected =
+      [
+        [
+          "---",
+          "name: autopilot-plan",
+          "description: plan stage of an autopilot run",
+          `model: ${role.model}`,
+          `effort: ${role.effort}`,
+          "---",
+        ].join("\n"),
+        render(readFragment("plan-body.md"), values),
+        readFragment("plan-budget.md"),
+        readFragment("plan-learnings.md"),
+      ]
+        .map((p) => p.replace(/\s+$/, ""))
+        .join("\n\n") + "\n";
+    expect(composeStage("plan")).toBe(expected);
   });
 });

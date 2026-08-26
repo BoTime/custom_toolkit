@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadConfig } from "./autopilot-config.mjs";
+import { TIERS, loadConfig } from "./autopilot-config.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -64,8 +64,10 @@ export const STAGES = {
   plan: {
     role: "plan",
     body: "plan-body.md",
-    fragments: ({ config, worktreeHas }) => [
-      "plan-budget.md",
+    fragments: ({ config, worktreeHas, values, fragmentReader }) => [
+      values?.tier === undefined
+        ? "plan-budget.md"
+        : { text: tierBudget({ config, tier: values.tier, fragmentReader }) },
       ...(laddered(config) ? ["plan-minimalism-lite.md"] : []),
       ...(fullLadder(config) ? ["plan-minimalism-full.md"] : []),
       ...(worktreeHas("docs/autopilot/learnings.md") ? ["plan-learnings.md"] : []),
@@ -74,11 +76,12 @@ export const STAGES = {
   sdd: {
     role: "implement",
     body: "sdd-body.md",
-    fragments: ({ config }) => [
+    fragments: ({ config, values }) => [
       "sdd-model-map.md",
       { text: roleTable(config) },
       "sdd-verification.md",
       "sdd-findings.md",
+      ...(isSingleTask(values?.tasks) ? ["sdd-review-single.md"] : []),
       ...(laddered(config) ? ["sdd-minimalism-lite.md"] : []),
       ...(fullLadder(config) ? ["sdd-minimalism-full.md"] : []),
     ],
@@ -111,7 +114,7 @@ export const STAGES = {
 };
 
 /** Flags that never fill a placeholder. */
-const RESERVED = new Set(["run", "config", "worktree"]);
+const RESERVED = new Set(["run", "config", "worktree", "tier", "tasks"]);
 
 const flagFor = (placeholder) => `--${placeholder.replace(/_/g, "-")}`;
 
@@ -146,6 +149,55 @@ export function roleTable(config) {
     "|---|---|---|",
     ...rows,
   ].join("\n");
+}
+
+/** The tier one step up the ladder, or undefined for the top tier. */
+const nextTier = (tier) => TIERS[TIERS.indexOf(tier) + 1];
+
+/**
+ * The tier's task-count budget, with the configured ceiling rendered in.
+ *
+ * This is inline text rather than a plain fragment name because `compose`
+ * reads a string fragment verbatim and never renders it — a `{{ceiling}}`
+ * written into a file selected by name would ship to the agent literally.
+ */
+export function tierBudget({ config, tier, fragmentReader }) {
+  if (!TIERS.includes(tier)) {
+    throw new Error(
+      `--tier=${tier} is not one of ${TIERS.join(", ")} — ` +
+        `a silent fallback would produce a run whose ceremony nobody chose`,
+    );
+  }
+  const ceilingFor = (name) => {
+    const ceiling = config?.tiers?.[name];
+    if (!Number.isInteger(ceiling) || ceiling < 1) {
+      throw new Error(
+        `tiers.${name}: missing from the merged config — a tier budget cannot default its ceiling`,
+      );
+    }
+    return String(ceiling);
+  };
+
+  const values = { ceiling: ceilingFor(tier) };
+  const next = nextTier(tier);
+  if (next) {
+    values.next_tier = next;
+    values.next_ceiling = ceilingFor(next);
+  }
+  return render(fragmentReader(`plan-budget-${tier}.md`), values);
+}
+
+/**
+ * True when the plan wrote exactly one task. A malformed count throws rather
+ * than resolving to "not one": absence is the documented untiered path, but a
+ * typo is not absence.
+ */
+function isSingleTask(tasks) {
+  if (tasks === undefined) return false;
+  if (!/^\d+$/.test(tasks) || Number(tasks) < 1) {
+    throw new Error(`--tasks=${tasks} is not a positive integer`);
+  }
+  return Number(tasks) === 1;
 }
 
 /** Every distinct `{{placeholder}}` in a template, in order of first appearance. */
@@ -249,7 +301,7 @@ export function compose({
   ].join("\n");
 
   const parts = [frontmatter, render(template, values)];
-  for (const fragment of entry.fragments({ config, worktreeHas })) {
+  for (const fragment of entry.fragments({ config, worktreeHas, values, fragmentReader })) {
     parts.push(typeof fragment === "string" ? fragmentReader(fragment) : fragment.text);
   }
   return `${parts.map((p) => p.replace(/\s+$/, "")).join("\n\n")}\n`;
