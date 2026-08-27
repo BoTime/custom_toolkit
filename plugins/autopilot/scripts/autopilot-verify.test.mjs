@@ -222,6 +222,60 @@ describe("formatVerifySection", () => {
     expect(md).toContain("Skipped — no ui criteria.");
     expect(md).not.toContain("| Criterion |");
   });
+
+  const manifest = {
+    base: "https://pub-abcd1234.r2.dev",
+    prefix: "custom_toolkit/issue-42/round-1",
+    items: [
+      {
+        id: "AC1",
+        status: "pass",
+        url: "https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC1.png",
+      },
+      {
+        id: "AC3",
+        status: "fail",
+        url: "https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC3.png",
+      },
+    ],
+  };
+
+  it("adds a screenshot column built from the manifest", () => {
+    const md = formatVerifySection(rows, { artifactsDir: "/run/artifacts", manifest });
+    expect(md).toContain("| Criterion | Result | Screenshot |");
+    expect(md).toContain("| --- | --- | --- |");
+    expect(md).toContain(
+      "[![AC1](https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC1.png)]" +
+        "(https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC1.png)",
+    );
+    expect(md).toContain("1/2 UI criteria verified");
+  });
+
+  it("leaves an em dash in the column for a criterion the manifest does not cover", () => {
+    const partial = { ...manifest, items: [manifest.items[0]] };
+    const md = formatVerifySection(rows, { artifactsDir: "/run/artifacts", manifest: partial });
+    expect(md).toContain("| AC3 — spinner | ❌ expected visible | — |");
+  });
+
+  // Byte-identical output is what keeps every repository with no `artifacts`
+  // block unaffected by this feature. Compare the whole string, not a phrase.
+  it("renders exactly the two-column form when there is no manifest", () => {
+    const withoutOption = formatVerifySection(rows, { artifactsDir: "/run/artifacts" });
+    const withEmptyManifest = formatVerifySection(rows, {
+      artifactsDir: "/run/artifacts",
+      manifest: { base: "b", prefix: "p", items: [] },
+    });
+    expect(withoutOption).toBe(withEmptyManifest);
+    expect(withoutOption).toContain("| Criterion | Result |");
+    expect(withoutOption).not.toContain("Screenshot");
+    expect(withoutOption).toContain("Artifacts (local to the run): `/run/artifacts`");
+  });
+
+  it("still renders the skipped form when a manifest is passed alongside it", () => {
+    const md = formatVerifySection([], { skipped: "no ui criteria", manifest });
+    expect(md).toContain("Skipped — no ui criteria.");
+    expect(md).not.toContain("| Criterion |");
+  });
 });
 
 describe("waitForServer", () => {
