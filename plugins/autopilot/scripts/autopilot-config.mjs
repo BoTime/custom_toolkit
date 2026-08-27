@@ -322,7 +322,7 @@ export function loadConfig(
 
   const { ok, errors, warnings } = validateConfig(merged, env, { host, configPath: path });
   if (!ok) {
-    const source = project === undefined ? path : `${path} (merged over defaults)`;
+    const source = project === undefined ? resolvedDefaultsPath : `${path} (merged over defaults)`;
     throw new Error(`${source} is invalid:\n  ${errors.join("\n  ")}`);
   }
   return { config: merged, warnings, usedProjectConfig: project !== undefined };

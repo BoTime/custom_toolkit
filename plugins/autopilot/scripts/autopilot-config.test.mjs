@@ -269,6 +269,15 @@ describe("loadConfig", () => {
     );
   });
 
+  it("attributes invalid shipped defaults to the defaults path when no project config exists", () => {
+    const defaults = validConfig();
+    delete defaults.roles.plan;
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(defaults) });
+    expect(() => loadConfig(PROJECT, {}, readFile, DEFAULTS)).toThrow(
+      new RegExp(`^${DEFAULTS.replaceAll(".", "\\.")} is invalid:`),
+    );
+  });
+
   it("throws a clear error when the project config is not valid JSON", () => {
     const readFile = reader({
       [DEFAULTS]: JSON.stringify(validConfig()),
