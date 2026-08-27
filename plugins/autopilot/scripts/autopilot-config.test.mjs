@@ -219,6 +219,11 @@ describe("loadConfig", () => {
   };
 
   const DEFAULTS = "/plugin/autopilot.default.json";
+  const CODEX_DEFAULTS = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "autopilot.codex.default.json",
+  );
   const PROJECT = "/proj/.claude/autopilot.json";
 
   it("returns the defaults when the project has no config", () => {
@@ -278,6 +283,94 @@ describe("loadConfig", () => {
     const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
     const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
     expect(config.findings_threshold).toBe(2);
+  });
+
+  it("loads codex defaults when the host is codex", () => {
+    const codexDefaults = {
+      ...validConfig(),
+      roles: {
+        ...validConfig().roles,
+        implement: { model: "gpt-5.4", effort: "medium" },
+        implement_complex: { model: "gpt-5.6", effort: "high" },
+      },
+    };
+    const readFile = reader({
+      [CODEX_DEFAULTS]: JSON.stringify(codexDefaults),
+    });
+    const { config, usedProjectConfig } = loadConfig(
+      "/proj/.codex/autopilot.json",
+      {},
+      readFile,
+      undefined,
+      { host: "codex" },
+    );
+    expect(config.roles.implement.model).toBe("gpt-5.4");
+    expect(config.roles.implement_complex.model).toBe("gpt-5.6");
+    expect(usedProjectConfig).toBe(false);
+  });
+
+  it("merges .codex overrides independently of .claude", () => {
+    const readFile = reader({
+      [CODEX_DEFAULTS]: JSON.stringify({
+        ...validConfig(),
+        roles: {
+          ...validConfig().roles,
+          implement: { model: "gpt-5.4", effort: "medium" },
+        },
+      }),
+      "/proj/.codex/autopilot.json": JSON.stringify({
+        roles: { implement: { effort: "max" } },
+      }),
+    });
+    const { config, usedProjectConfig } = loadConfig(
+      "/proj/.codex/autopilot.json",
+      {},
+      readFile,
+      undefined,
+      { host: "codex" },
+    );
+    expect(config.roles.implement).toEqual({ model: "gpt-5.4", effort: "max" });
+    expect(usedProjectConfig).toBe(true);
+  });
+
+  it("uses the passed config path in the missing test_command warning", () => {
+    const defaults = validConfig();
+    delete defaults.test_command;
+    const readFile = reader({
+      [CODEX_DEFAULTS]: JSON.stringify(defaults),
+    });
+    const { warnings } = loadConfig(
+      "/proj/.codex/autopilot.json",
+      {},
+      readFile,
+      undefined,
+      { host: "codex" },
+    );
+    expect(warnings).toContain(
+      "test_command: not set — the land stage will park instead of reporting tests green. Set it in your project's /proj/.codex/autopilot.json",
+    );
+  });
+
+  it("warns when CODEX_REASONING_EFFORT is set for codex", () => {
+    const readFile = reader({
+      [CODEX_DEFAULTS]: JSON.stringify(validConfig()),
+    });
+    const { warnings } = loadConfig(
+      "/proj/.codex/autopilot.json",
+      { CODEX_REASONING_EFFORT: "high" },
+      readFile,
+      undefined,
+      { host: "codex" },
+    );
+    expect(warnings).toContain(
+      "CODEX_REASONING_EFFORT=high overrides every configured effort level",
+    );
+  });
+
+  it("rejects an unknown host", () => {
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
+    expect(() => loadConfig(PROJECT, {}, readFile, DEFAULTS, { host: "cursor" }))
+      .toThrow(/unknown host/i);
   });
 });
 
@@ -417,6 +510,33 @@ describe("shipped autopilot.default.json", () => {
 
   it("ships the learnings role", () => {
     expect(defaults.roles.learnings).toEqual({ model: "opus", effort: "high" });
+  });
+});
+
+describe("shipped autopilot.codex.default.json", () => {
+  const defaults = JSON.parse(
+    readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "autopilot.codex.default.json"),
+      "utf8",
+    ),
+  );
+
+  it("ships every role with a codex model and allowed effort", () => {
+    for (const role of ROLES) {
+      expect(defaults.roles[role]).toBeDefined();
+      expect(["gpt-5.4", "gpt-5.6"]).toContain(defaults.roles[role].model);
+      expect(EFFORTS).toContain(defaults.roles[role].effort);
+    }
+  });
+
+  it("uses gpt-5.6 for high-complexity roles and gpt-5.4 for routine roles", () => {
+    expect(defaults.roles.brainstorm.model).toBe("gpt-5.6");
+    expect(defaults.roles.plan.model).toBe("gpt-5.6");
+    expect(defaults.roles.implement_complex.model).toBe("gpt-5.6");
+    expect(defaults.roles.fix_escalation.model).toBe("gpt-5.6");
+    expect(defaults.roles.verify.model).toBe("gpt-5.4");
+    expect(defaults.roles.implement.model).toBe("gpt-5.4");
+    expect(defaults.roles.re_review.model).toBe("gpt-5.4");
   });
 });
 
