@@ -69,33 +69,45 @@ find ~/.claude/plugins/cache ~/.codex/plugins/cache -path '*/autopilot/*/scripts
 Run before asking your human partner anything. On any failure, report what is
 missing and stop — do not start the brainstorm.
 
-1. **Skills resolve.** `autopilot:autopilot-brainstorm`,
+1. **Select the host.** Identify the harness running this skill and keep one
+   matching pair for the whole run:
+
+   | Harness | `<host>` | `<config>` |
+   |---|---|---|
+   | Claude Code | `claude` | `.claude/autopilot.json` |
+   | Codex | `codex` | `.codex/autopilot.json` |
+
+   Stop if the harness is neither one. Every config read and stage composition
+   below uses this selected pair; never mix a config from one row with the host
+   from the other.
+2. **Skills resolve.** `autopilot:autopilot-brainstorm`,
    `superpowers:writing-plans`, `superpowers:subagent-driven-development`,
    `superpowers:requesting-code-review`,
    `superpowers:finishing-a-development-branch`,
    `superpowers:using-git-worktrees`. A missing skill is the most dangerous
    failure here: an agent told to follow an absent skill improvises the stage
    and returns plausible output that skipped the process entirely.
-2. **SDD scripts are executable.** `sdd-workspace`, `task-brief`, and
+3. **SDD scripts are executable.** `sdd-workspace`, `task-brief`, and
    `review-package` in the subagent-driven-development skill's `scripts/`.
-3. **Config is valid.** From the repository root:
+4. **Config is valid.** From the repository root, substitute the selected
+   literals for `<config>` and `<host>`:
 
    ```bash
-   AP="<plugin root>" && node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-config.mjs').href).then(m=>{const r=m.loadConfig('.claude/autopilot.json');r.warnings.forEach(w=>console.log('warning:',w));console.log(r.usedProjectConfig?'ok (project config)':'ok (plugin defaults)')})" "$AP"
+   AP="<plugin root>" && node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-config.mjs').href).then(m=>{const r=m.loadConfig(process.argv[2],process.env,undefined,undefined,{host:process.argv[3]});r.warnings.forEach(w=>console.log('warning:',w));console.log(r.usedProjectConfig?'ok (project config)':'ok (plugin defaults)')})" "$AP" "<config>" "<host>"
    ```
 
    Report any warning. Two matter especially:
 
    - **`test_command` not set** — `land` will park instead of reporting tests
      green. Say so plainly before starting the brainstorm; the fix is one key
-     in the project's `.claude/autopilot.json`.
-   - `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
-     effort level.
+     in the selected `<config>` file.
+   - `CLAUDE_CODE_EFFORT_LEVEL` on Claude or `CODEX_REASONING_EFFORT` on Codex
+     overrides every configured effort level.
 
-   Config is the plugin's `autopilot.default.json` with the project's optional
-   `.claude/autopilot.json` layered over it, merged per key (and per role
-   within `roles`). A project with no config file runs on defaults.
-4. **Repository preconditions.** A git repo with an `origin` remote, and
+   Config is the selected host's shipped defaults with the project's optional
+   `<config>` layered over them, merged per key (and per role within `roles`).
+   A project with no config file runs on that host's defaults.
+5. **Repository preconditions.** A git repo with an `origin` remote, and
    `gh auth status` succeeding.
 
 ## Phase 1 — brainstorm
@@ -226,10 +238,6 @@ and `findings.jsonl` inherits this placement for two reasons:
    A ledger inside one destroys the record of every completed run, including
    the PR URL that `nextStage` returns `done` on.
 
-**Known constraint:** a worktree-isolated session cannot Write or Edit files in
-the main checkout, though **Bash appends (`>>`) and redirects still work**. Use
-Bash for `run.md`, `findings.jsonl`, and everything under `verify/`.
-
 **Every stage:** re-read the ledger before dispatching, append after. Stage
 outputs go to files; a stage returns a status line and a path, never content.
 This is what keeps your context small enough to avoid compaction.
@@ -243,16 +251,43 @@ You do not compose dispatches. `autopilot-dispatch.mjs` does:
 
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" <stage> \
-  --run=<run> --config=.claude/autopilot.json [--key=value ...]
+  --run=<run> --host=<host> --config=<config> [--key=value ...]
 ```
 
-It writes `.superpowers/autopilot/<run>/agents/<stage>.md` — the subagent
-definition, carrying the role's model and effort from config plus every
-contract that stage owes its agent — and prints **that path and nothing else**.
-Dispatch the Agent by the printed path.
+It writes one host-native stage artifact carrying the role's model and effort
+from config plus every contract that stage owes its agent, then prints **that
+path and nothing else**. Handle that path with the selected protocol below.
 
-The Agent tool has no `effort` parameter; frontmatter is the only way to set
-it, which is why a dispatch is a file rather than a string.
+### Codex dispatch
+
+For Codex, the concrete composition prefix is:
+
+```bash
+node "$AP/scripts/autopilot-dispatch.mjs" <stage> \
+  --run=<run> --host=codex --config=.codex/autopilot.json [--key=value ...]
+```
+
+The printed path is
+`.superpowers/autopilot/<run>/agents/<stage>.json`. Read that JSON record, then
+call `spawn_agent` with `task_name` `${record.role}-${stage}`, `message`
+`record.instructions`, `model` `record.model`, and `reasoning_effort`
+`record.reasoning_effort`; set `fork_turns` `"none"` so Codex accepts those
+explicit model settings and relies only on the self-contained rendered
+instructions. A missing or malformed field is a hard stop; never fill it from
+memory or substitute a different model. Wait for that agent's stage status/path
+result, then apply the same ledger rule the stage states below.
+
+### Claude dispatch
+
+For Claude, the printed path is
+`.superpowers/autopilot/<run>/agents/<stage>.md`. It is the subagent definition;
+dispatch the Agent by that printed path. The Agent tool has no `effort`
+parameter, so the definition's frontmatter carries it.
+
+**Claude-only worktree caveat:** a worktree-isolated Claude session cannot
+Write or Edit files in the main checkout, though **Bash appends (`>>`) and
+redirects still work**. On Claude, use Bash for `run.md`, `findings.jsonl`, and
+everything under `verify/`.
 
 Four rules:
 
@@ -261,10 +296,10 @@ Four rules:
    `roles.<role>` field. Never work around it by writing a prompt yourself: a
    stage dispatched without its contract produces plausible work that skipped
    the process, and reports success.
-2. **Do not read the composed file.** The fragments travel from the plugin
-   directory into the definition inside the node process, so they are never a
-   tool result and cost you nothing. Reading the file spends exactly the
-   context the script exists to save.
+2. **Consume only what the host protocol requires.** On Claude, do not read the
+   composed definition; dispatch it by path. On Codex, read the JSON record
+   exactly once because its four fields are the native spawn request. Do not
+   separately open or reconstruct the rendered fragments.
 3. **Multi-line values go to a file, and the flag says `@path`.** Write the
    value into the run directory with a quoted heredoc (`cat > path <<'EOF'`),
    then pass `--key=@path`. Single-line values — paths, the run name, the
@@ -367,7 +402,8 @@ cat > .superpowers/autopilot/<run>/design.md <<'EOF'
 EOF
 node "$AP/scripts/autopilot-dispatch.mjs" spec \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path> \
   --branch=<branch> \
   --spec-path=docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md \
@@ -375,7 +411,7 @@ node "$AP/scripts/autopilot-dispatch.mjs" spec \
   --criteria-source="The acceptance criteria for this spec come from the design settled in the brainstorm, below."
 ```
 
-Dispatch by the printed path.
+Dispatch with the selected host protocol.
 
 `/autopilot-github` seeds the criteria from the issue body, a plain
 `/autopilot` from the brainstorm's design — that difference is what
@@ -393,13 +429,14 @@ approved spec and returns the plan path.
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" plan \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path> \
   --spec-path=<path-to-spec> \
   --tier=<tier>
 ```
 
-Dispatch by the printed path.
+Dispatch with the selected host protocol.
 
 `--tier` is the `tier:` entry's value, read from the ledger you re-read before
 dispatching. **Omit the flag entirely when the ledger has no `tier:` entry** —
@@ -487,13 +524,14 @@ against the plan.
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" sdd \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path> \
   --plan-path=<path-to-plan> \
   --tasks=<n>
 ```
 
-Dispatch by the printed path.
+Dispatch with the selected host protocol.
 
 SDD picks models by its own judgment and cannot accept an externally supplied
 map, so the composed definition overrides that with a literal mapping plus a
@@ -612,13 +650,14 @@ cat > .superpowers/autopilot/<run>/verify/failures.md <<'EOF'
 EOF
 node "$AP/scripts/autopilot-dispatch.mjs" verify-fix \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path> \
   --failing-criteria="AC3, AC5" \
   --failures=@.superpowers/autopilot/<run>/verify/failures.md
 
 node "$AP/scripts/autopilot-verify.mjs" run \
-  --config=.claude/autopilot.json \
+  --config=<config> \
   --run-dir=.superpowers/autopilot/<run>/verify \
   --cwd=<worktree path> \
   --spec=<path-to-spec> \
@@ -688,11 +727,12 @@ doc.
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" learnings \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path>
 ```
 
-Dispatch by the printed path.
+Dispatch with the selected host protocol.
 
 A `learnings`-stage failure does not park. Log it and continue: append
 `learnings failed — <reason>` and proceed to `land`. Only a successful commit
@@ -711,7 +751,7 @@ progress and misreport the error as the conflict list.
 **If `test_command` is not set, park immediately** — before rebasing. Without
 it there is no way to tell a landed branch from a broken one, and the whole
 point of this stage is that check. Append
-`PARKED — test_command not set in .claude/autopilot.json`. Never treat an
+`PARKED — test_command not set in <config>`. Never treat an
 absent test command as a pass.
 
 - `clean` — run `test_command`. Green, append
@@ -722,7 +762,8 @@ absent test command as a pass.
   ```bash
   node "$AP/scripts/autopilot-dispatch.mjs" land-conflict \
     --run=<run> \
-    --config=.claude/autopilot.json \
+    --host=<host> \
+    --config=<config> \
     --worktree=<worktree path> \
     --base-ref=<config.base_ref> \
     --conflicts=@.superpowers/autopilot/<run>/land.txt
@@ -744,11 +785,12 @@ branch is broken. The suite is the only thing that catches this.
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" pr \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path>
 ```
 
-Dispatch by the printed path. It runs
+Dispatch with the selected host protocol. It runs
 `superpowers:finishing-a-development-branch`, answering the menu with option 2
 (push and create a PR), and handles the push and `gh pr create` itself.
 

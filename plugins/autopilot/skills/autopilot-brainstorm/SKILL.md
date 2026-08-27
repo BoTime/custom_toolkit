@@ -39,7 +39,7 @@ The clarifying questions ARE the approval mechanism. Every decision in the desig
 You MUST create a task for each of these items and complete them in order:
 
 1. **Explore project context** — check files, docs, recent commits
-2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
+2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval start it using the active host's browser and process instructions. If no visual question ever arises, never offer it. See the Visual Companion section below.
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. This is the only place the developer steers, so keep asking until nothing load-bearing is unresolved.
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation. The developer's pick is the last decision they make.
 5. **Classify the ceremony tier** — state it out loud in the same message as the approaches, so the developer's pick and any override arrive together. See the Ceremony Tier section below.
@@ -178,9 +178,9 @@ ledger. Prefer the smaller tier when the two are close.
 A browser-based companion for showing mockups, diagrams, and visual options during brainstorming. Available as a tool — not a mode. Accepting the companion means it's available for questions that benefit from visual treatment; it does NOT mean every question goes through the browser.
 
 **Offering the companion (just-in-time):** Do NOT offer it upfront. Wait until a question would genuinely be clearer shown than told — a real mockup / layout / diagram question, not merely a UI *topic*. The first time that happens, offer it then, as its own message:
-> "This next part might be easier if I show you — I can put together mockups, diagrams, and comparisons in a browser tab as we go. It's still new and can be token-intensive. Want me to? I'll open it for you."
+> "This next part might be easier if I show you — I can put together mockups, diagrams, and comparisons in a browser tab as we go. It's still new and can be token-intensive. Want me to start it?"
 
-**This offer MUST be its own message.** Only the offer — no clarifying question, summary, or other content. Wait for the user's response. If they accept, start the server with `--open` so their browser opens to the first screen automatically. If they decline, continue text-only and don't offer again unless they raise it.
+**This offer MUST be its own message.** Only the offer — no clarifying question, summary, or other content. Wait for the user's response. If they accept, start the server with `--open` and always share its complete URL; automatic opening is host- and environment-dependent. On Codex, the visual companion must use the guide's persistent foreground session instructions so the server survives across turns. If they decline, continue text-only and don't offer again unless they raise it.
 
 **Per-question decision:** Even after the user accepts, decide FOR EACH QUESTION whether to use the browser or the terminal. The test: **would the user understand this better by seeing it than reading it?**
 

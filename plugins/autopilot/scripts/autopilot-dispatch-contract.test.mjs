@@ -189,6 +189,7 @@ describe("SKILL.md routes every dispatch through the script", () => {
       const expected = new Set(placeholdersIn(readFragment(STAGES[stage].body)));
       expected.add("run");
       expected.add("config");
+      expected.add("host");
       const passed = new Set(flags);
       expect([...expected].filter((f) => !passed.has(f)), `${stage}: flags not passed`).toEqual([]);
       const stageMayCarry = (f) => expected.has(f) || (GATED_FLAGS[stage] ?? []).includes(f);

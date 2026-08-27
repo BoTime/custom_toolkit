@@ -37,15 +37,15 @@ the `Base directory for this skill:` line the harness prefixed to this skill
 when it loaded. Substitute that literal path into every command; shell
 variables do not persist between Bash calls.
 
-Do **not** use `$CLAUDE_PLUGIN_ROOT`: it is unset in Bash tool calls, so it
-expands to an empty string and the command fails with "No such file or
-directory".
+Do **not** use a host-specific plugin-root environment variable. Such variables
+may be set only for processes the harness launches and be empty in shell calls,
+causing the command to fail with "No such file or directory".
 
 ## Starting a Session
 
 ```bash
-# Start AFTER the user approves the companion. --open auto-opens their browser on
-# the first screen; --project-dir persists mockups and enables same-port restart.
+# Start AFTER the user approves the companion. --open requests a browser open;
+# --project-dir persists mockups and enables same-port restart.
 "$SKILL_DIR/scripts/start-server.sh" --project-dir /path/to/project --open
 
 # Returns: {"type":"server-started","port":52341,
@@ -54,7 +54,9 @@ directory".
 #           "state_dir":"/path/to/project/.superpowers/brainstorm/12345-1706000000/state"}
 ```
 
-Save `screen_dir` and `state_dir` from the response. With `--open`, the browser opens itself when you push the first screen — you don't need to ask the user to open it, but still share the URL as a fallback (headless/remote setups won't auto-open).
+Save `screen_dir` and `state_dir` from the response. With `--open`, the harness
+may open the browser when you push the first screen. Always share the complete
+URL because automatic opening is unavailable in headless and remote setups.
 
 **The URL contains a session key (`?key=…`).** The server rejects any request
 without it, so always give the user the **complete** URL from the `url` field —
@@ -81,9 +83,14 @@ On Windows, the script auto-detects and switches to foreground mode (which block
 **Codex:**
 ```bash
 # Codex reaps background processes. The script auto-detects CODEX_CI and
-# switches to foreground mode. Run it normally — no extra flags needed.
+# switches to foreground mode. Start it in a persistent exec session and let
+# the command yield its session id; no extra script flags are needed.
 "$SKILL_DIR/scripts/start-server.sh" --project-dir /path/to/project --open
 ```
+
+Keep that exec session running across turns so the foreground server survives.
+Poll the same session when startup output is needed, and terminate it only when
+cleaning up the companion.
 
 **Gemini CLI:**
 ```bash
