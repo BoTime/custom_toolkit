@@ -26,8 +26,8 @@ candidates first, then the brainstorm-question summary and its
 `findings_threshold`; there is no separate key for questions.
 
 `findings_threshold` comes from `.claude/autopilot.json`, layered over the
-plugin default of 2. If the corpus is empty, say so and stop — no run has
-captured findings yet.
+plugin default of 2. If the findings corpus is empty, say so and move on to
+the question report below — no run has captured findings yet.
 
 ## Present the candidates
 
