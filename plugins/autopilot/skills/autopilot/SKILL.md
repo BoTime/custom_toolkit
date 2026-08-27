@@ -628,9 +628,9 @@ criterion-to-image mapping is derived from Playwright's JSON report, never from
 the agent — which is why the browser-verification contract's rule 4 still
 stands untouched.
 
-When it cannot — no `artifacts` block, an unreadable env file, a missing
-credential, a failed upload — the run **does not park**. The section degrades to
-its text-only form and the script prints one extra line:
+When it cannot — an unreadable env file, a missing credential, a failed upload —
+the run **does not park**. The section degrades to its text-only form and the
+script prints one extra line:
 
 ```
 upload: skipped — <reason>
@@ -643,9 +643,10 @@ entry — or, when the stage is parking, immediately **before** the
 last entry, or `nextStage` stops returning `parked` and a parked run reads as
 resumable.
 
-A repository with no `artifacts` block prints no such line and appends none. Its
-ledger, its PR body section and its issue comments are exactly what they were
-before screenshots existed — that is the point, and it needs no feature flag.
+A repository with **no `artifacts` block at all** is not a failed upload: the
+script prints no such line, so there is none to append. Its ledger, its PR body
+section and its issue comments are exactly what they were before screenshots
+existed — that is the point, and it needs no feature flag.
 
 ### `learnings`
 

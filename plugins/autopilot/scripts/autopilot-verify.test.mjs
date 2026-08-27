@@ -604,6 +604,24 @@ describe("verify()'s lifecycle order and round threading", () => {
   it("defaults round to 1, so an unflagged first run is round 1", () => {
     expect(body).toMatch(/export async function verify\(\{[^}]*round = 1[^}]*\}\)/);
   });
+
+  // A repository with no `artifacts` block must reach exactly the ledger it
+  // reached before screenshots existed. `resolveArtifactsConfig`'s reason for
+  // that case says only that no block exists, so reporting it as a skip would
+  // make the orchestrator append `verify: screenshot upload skipped — ...` on
+  // every unconfigured run. Only a configured upload that failed earns a line.
+  it("reports an upload skip only when `artifacts` was actually configured", () => {
+    expect(body).toContain("uploadSkipped: upload.ok || !config.artifacts ? null : upload.reason");
+  });
+
+  // The orchestrator invokes this stage from the repository root — that is what
+  // makes its relative --config and --run-dir paths resolve — and passes the
+  // worktree as --cwd. The key's `<repo>` segment is the checkout's name, so it
+  // must come from process.cwd() rather than from the worktree directory.
+  it("derives the object key's repo segment from the checkout, not the worktree", () => {
+    expect(body).toContain('repo: basename(resolvePath("."))');
+    expect(body).not.toContain("repo: basename(resolvePath(cwd))");
+  });
 });
 
 describe("main's run flags", () => {
@@ -662,5 +680,42 @@ describe("main's run flags", () => {
     const { calls, fn } = spy();
     await silently(() => main(["run", "--run-dir=/run/verify", "--spec=s.md", "--round=2"], fn));
     expect(calls[0].round).toBe(2);
+  });
+
+  // The printed line is what SKILL.md tells the orchestrator to turn into
+  // `verify: screenshot upload skipped — <reason>`, so what main prints and
+  // what the ledger gains are the same question.
+  const printed = async (result) => {
+    const out = [];
+    const log = console.log;
+    const exitCode = process.exitCode;
+    console.log = (m) => out.push(String(m));
+    try {
+      await main(["run", "--run-dir=/run/verify", "--spec=s.md"], async () => result);
+    } finally {
+      console.log = log;
+      process.exitCode = exitCode;
+    }
+    return out.join("\n");
+  };
+
+  it("prints the upload skip line when a configured upload failed", async () => {
+    const out = await printed({
+      code: EXIT.pass,
+      message: "2/2 ui criteria passed",
+      uploadSkipped: "artifacts config is missing public_base_url",
+    });
+    expect(out).toContain("upload: skipped — artifacts config is missing public_base_url");
+  });
+
+  // The unconfigured case: verify() reports no reason at all, so nothing is
+  // printed and the orchestrator appends nothing.
+  it("prints no upload line at all when there was nothing to skip", async () => {
+    const out = await printed({
+      code: EXIT.pass,
+      message: "2/2 ui criteria passed",
+      uploadSkipped: null,
+    });
+    expect(out).not.toContain("upload:");
   });
 });

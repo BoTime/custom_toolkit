@@ -323,9 +323,10 @@ export function comment(
  *
  * One comment, one image per criterion, in manifest order. The status is
  * spelled out beside each image because the reader is looking at the picture,
- * not at the PR table it came from — and the prefix names the round, so a
- * criterion that was red, got a fix round and went green reads as two comments
- * in the thread rather than one image replacing another.
+ * not at the PR table it came from — and the prefix names the round the images
+ * came from, which is the run's latest: the comment is posted once, and a fix
+ * round rewrites the manifest it reads while leaving round 1's objects intact
+ * at their own keys.
  *
  * The public-URL warning is repeated here rather than left to the skill: the
  * comment outlives the run, and whoever reads it later is exactly the person
@@ -459,7 +460,16 @@ export function main(
         console.log(`skipped — no screenshot manifest at ${args.manifest}`);
         return;
       }
-      if (!Array.isArray(manifest.items) || manifest.items.length === 0) {
+      // The type check comes first for the same reason the catch above exists:
+      // `JSON.parse` succeeds on `null` and on a bare number, and reading
+      // `.items` off either throws into the outer catch and exits non-zero —
+      // the one outcome an unconfigured repository must never reach.
+      if (
+        !manifest ||
+        typeof manifest !== "object" ||
+        !Array.isArray(manifest.items) ||
+        manifest.items.length === 0
+      ) {
         console.log(`skipped — screenshot manifest at ${args.manifest} has no items`);
         return;
       }

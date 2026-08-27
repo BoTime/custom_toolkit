@@ -736,6 +736,27 @@ describe("main — screenshots", () => {
     expect(calls).toHaveLength(0);
   });
 
+  // `JSON.parse` succeeds on `null` and on a bare number, so the parse's own
+  // catch does not cover them. Without a type check, reading `.items` off
+  // either throws into the outer catch and exits non-zero — which is the one
+  // outcome this whole path exists to keep away from an unconfigured repo.
+  it.each([["null", "null"], ["a bare number", "42"], ["a string", '"nope"']])(
+    "is a clean no-op when the manifest parses to %s",
+    (_label, raw) => {
+      const out = capture();
+      const calls = [];
+      main(
+        ["screenshots", "--issue", "42", "--manifest", "/run/uploads.json"],
+        recorder(calls),
+        undefined,
+        { readFile: () => raw },
+      );
+      expect(process.exitCode).toBe(0);
+      expect(calls).toHaveLength(0);
+      expect(out.join("\n")).toContain("skipped — ");
+    },
+  );
+
   it("exits non-zero when --manifest is not given at all", () => {
     capture();
     main(["screenshots", "--issue", "42"], recorder([]), undefined, {});

@@ -186,8 +186,8 @@ export function formatVerifySection(rows, { artifactsDir, skipped, manifest } = 
       continue;
     }
     const url = shots.get(row.id);
-    // A linked thumbnail rather than a bare image: GitHub scales it to the
-    // column, and the click still reaches full size.
+    // A linked thumbnail rather than a bare image: the image is wrapped in a
+    // link to itself, so a click reaches the full-size original.
     const cell = url ? `[![${row.id}](${url})](${url})` : "—";
     lines.push(`| ${label} | ${mark[row.status]}${detail} | ${cell} |`);
   }
@@ -558,10 +558,15 @@ export async function verify({ configPath, runDir, cwd, specPath, round = 1 }) {
     // `runDir` is `<base>/<run>/verify`, so the run name is its parent's
     // basename — the same one-level-up move `appendFindings` makes for the
     // findings corpus.
+    // `cwd` is the worktree, whose directory name is the run's, not the
+    // repository's; `process.cwd()` is the main checkout, because the
+    // orchestrator runs every stage from the repository root — which is what
+    // makes its relative `--config` and `--run-dir` paths resolve at all. So
+    // the key's `<repo>` segment comes from the latter.
     const upload = await uploadScreenshots({
       config,
       rows,
-      repo: basename(resolvePath(cwd)),
+      repo: basename(resolvePath(".")),
       run: basename(resolvePath(join(runDir, ".."))),
       round,
       artifactsDir,
@@ -589,7 +594,11 @@ export async function verify({ configPath, runDir, cwd, specPath, round = 1 }) {
       summary,
       rows,
       artifactsDir,
-      uploadSkipped: upload.ok ? null : upload.reason,
+      // A repository that never configured `artifacts` reports nothing: the
+      // reason it would carry says only that no block exists, and printing it
+      // makes the orchestrator append a ledger line that repository never had.
+      // Only a configured upload that then failed is worth a line.
+      uploadSkipped: upload.ok || !config.artifacts ? null : upload.reason,
     };
   } finally {
     if (started) teardown({ child: started.child, stopCommand: stop_command, cwd });

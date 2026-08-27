@@ -345,9 +345,10 @@ and they are not the same:
 
 1. It prints `posted <n> screenshots to issue #<n>` — append
    `github: verify screenshots posted`.
-2. It prints `skipped — no screenshot manifest at <path>` — append **nothing**
-   and continue. A repository with no `artifacts` block must reach exactly the
-   ledger it reached before this hook existed.
+2. It prints a line starting `skipped — ` (the manifest is absent or
+   unreadable, or it carries no items) — append **nothing** and continue. A
+   repository with no `artifacts` block must reach exactly the ledger it
+   reached before this hook existed.
 
 The ledger line is the idempotency guard: re-read the ledger first and skip the
 step when `github: verify screenshots posted` is already present, the same way

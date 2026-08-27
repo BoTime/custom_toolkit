@@ -67,6 +67,28 @@ describe("SKILL.md <-> nextStage coupling", () => {
     expect(nextStage(parseLedger(buildLedger(cumulative)))).toBe("verify");
   });
 
+  // `verify: screenshot upload skipped — <reason>` is the riskier of the two
+  // lines the screenshot feature adds: it starts with `verify`, which is
+  // exactly the prefix nextStage resumes at `learnings` on. That is harmless
+  // only for as long as the line follows the stage's own `verify:` entry and
+  // precedes nothing but `PARKED`. Both orderings are pinned here.
+  it('the screenshot skip line after "verify:" still resolves to "learnings"', () => {
+    const cumulative = [
+      ...STAGE_ENTRIES.slice(0, 7).map(([text]) => text), // through "verify: 3/3 ..."
+      "verify: screenshot upload skipped — env file apps/api/.env could not be read",
+    ];
+    expect(nextStage(parseLedger(buildLedger(cumulative)))).toBe("learnings");
+  });
+
+  it('the screenshot skip line before "PARKED" still resolves to "parked"', () => {
+    const cumulative = [
+      ...STAGE_ENTRIES.slice(0, 6).map(([text]) => text), // through "sdd complete"
+      "verify: screenshot upload skipped — upload of AC1 failed with HTTP 403",
+      "PARKED — verify red after fix round: AC1",
+    ];
+    expect(nextStage(parseLedger(buildLedger(cumulative)))).toBe("parked");
+  });
+
   it('"sdd complete" with fix-round counts still returns "verify"', () => {
     // The entry grew a fix-round clause. nextStage matches it by PREFIX, so
     // the longer wording must keep resolving to the same stage.
