@@ -92,6 +92,22 @@ const failing = (title, message) => ({
   tests: [{ status: "unexpected", results: [{ error: { message } }] }],
 });
 
+// Playwright records one attachment per artifact on each test result. Only the
+// image/png one is a screenshot; a trace attachment sits in the same array.
+const withShot = (spec, path) => ({
+  ...spec,
+  tests: spec.tests.map((t) => ({
+    ...t,
+    results: t.results.map((r) => ({
+      ...r,
+      attachments: [
+        { name: "trace", contentType: "application/zip", path: "/run/trace.zip" },
+        { name: "screenshot", contentType: "image/png", path },
+      ],
+    })),
+  })),
+});
+
 describe("summarize", () => {
   it("counts passes and failures across nested suites", () => {
     const nested = {
@@ -118,6 +134,23 @@ describe("summarize", () => {
 
   it("returns zeroes for an empty report", () => {
     expect(summarize({})).toMatchObject({ total: 0, passed: 0, failed: 0 });
+  });
+
+  it("carries the local path of the image/png attachment onto the result", () => {
+    const s = summarize(report([withShot(passing("AC1 login"), "/run/a/AC1.png")]));
+    expect(s.results[0].attachments).toBe("/run/a/AC1.png");
+  });
+
+  it("ignores a non-image attachment rather than mistaking it for a screenshot", () => {
+    const spec = passing("AC1 login");
+    spec.tests[0].results[0].attachments = [
+      { name: "trace", contentType: "application/zip", path: "/run/trace.zip" },
+    ];
+    expect(summarize(report([spec])).results[0].attachments).toBeNull();
+  });
+
+  it("returns a null path for a spec with no attachments at all", () => {
+    expect(summarize(report([passing("AC1 login")])).results[0].attachments).toBeNull();
   });
 });
 
@@ -146,6 +179,22 @@ describe("attribute", () => {
     const rows = attribute(criteria, summarize(report([passing("AC1 x"), failing("AC3 y", "nope")])));
     expect(rows.find((r) => r.id === "AC3")).toMatchObject({ status: "fail", message: "nope" });
   });
+
+  it("threads the screenshot path onto the criterion it matched", () => {
+    const rows = attribute(
+      criteria,
+      summarize(report([withShot(passing("AC1 login"), "/run/a/AC1.png")])),
+    );
+    expect(rows.find((r) => r.id === "AC1").screenshot).toBe("/run/a/AC1.png");
+  });
+
+  it("leaves a criterion with no test missing and with no path", () => {
+    const rows = attribute(criteria, summarize(report([passing("AC1 login")])));
+    expect(rows.find((r) => r.id === "AC3")).toMatchObject({
+      status: "missing",
+      screenshot: null,
+    });
+  });
 });
 
 describe("formatVerifySection", () => {
@@ -170,6 +219,60 @@ describe("formatVerifySection", () => {
 
   it("renders the skipped form instead of an empty table", () => {
     const md = formatVerifySection([], { skipped: "no ui criteria" });
+    expect(md).toContain("Skipped — no ui criteria.");
+    expect(md).not.toContain("| Criterion |");
+  });
+
+  const manifest = {
+    base: "https://pub-abcd1234.r2.dev",
+    prefix: "custom_toolkit/issue-42/round-1",
+    items: [
+      {
+        id: "AC1",
+        status: "pass",
+        url: "https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC1.png",
+      },
+      {
+        id: "AC3",
+        status: "fail",
+        url: "https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC3.png",
+      },
+    ],
+  };
+
+  it("adds a screenshot column built from the manifest", () => {
+    const md = formatVerifySection(rows, { artifactsDir: "/run/artifacts", manifest });
+    expect(md).toContain("| Criterion | Result | Screenshot |");
+    expect(md).toContain("| --- | --- | --- |");
+    expect(md).toContain(
+      "[![AC1](https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC1.png)]" +
+        "(https://pub-abcd1234.r2.dev/custom_toolkit/issue-42/round-1/AC1.png)",
+    );
+    expect(md).toContain("1/2 UI criteria verified");
+  });
+
+  it("leaves an em dash in the column for a criterion the manifest does not cover", () => {
+    const partial = { ...manifest, items: [manifest.items[0]] };
+    const md = formatVerifySection(rows, { artifactsDir: "/run/artifacts", manifest: partial });
+    expect(md).toContain("| AC3 — spinner | ❌ expected visible | — |");
+  });
+
+  // Byte-identical output is what keeps every repository with no `artifacts`
+  // block unaffected by this feature. Compare the whole string, not a phrase.
+  it("renders exactly the two-column form when there is no manifest", () => {
+    const withoutOption = formatVerifySection(rows, { artifactsDir: "/run/artifacts" });
+    const withEmptyManifest = formatVerifySection(rows, {
+      artifactsDir: "/run/artifacts",
+      manifest: { base: "b", prefix: "p", items: [] },
+    });
+    expect(withoutOption).toBe(withEmptyManifest);
+    expect(withoutOption).toContain("| Criterion | Result |");
+    expect(withoutOption).not.toContain("Screenshot");
+    expect(withoutOption).toContain("Artifacts (local to the run): `/run/artifacts`");
+  });
+
+  it("still renders the skipped form when a manifest is passed alongside it", () => {
+    const md = formatVerifySection([], { skipped: "no ui criteria", manifest });
     expect(md).toContain("Skipped — no ui criteria.");
     expect(md).not.toContain("| Criterion |");
   });
@@ -217,8 +320,10 @@ describe("playwrightConfig", () => {
     expect(cfg).toContain("/run/verify/artifacts/results.json");
   });
 
-  it("captures screenshots and traces only on failure", () => {
-    expect(cfg).toContain('screenshot: "only-on-failure"');
+  // A passing criterion is the case a reviewer most wants to see, and
+  // "only-on-failure" produced no image for it at all.
+  it("captures a screenshot on every test, and keeps traces failure-only", () => {
+    expect(cfg).toContain('screenshot: "on"');
     expect(cfg).toContain('trace: "retain-on-failure"');
     expect(cfg).toContain('video: "off"');
   });
@@ -499,6 +604,24 @@ describe("verify()'s lifecycle order and round threading", () => {
   it("defaults round to 1, so an unflagged first run is round 1", () => {
     expect(body).toMatch(/export async function verify\(\{[^}]*round = 1[^}]*\}\)/);
   });
+
+  // A repository with no `artifacts` block must reach exactly the ledger it
+  // reached before screenshots existed. `resolveArtifactsConfig`'s reason for
+  // that case says only that no block exists, so reporting it as a skip would
+  // make the orchestrator append `verify: screenshot upload skipped — ...` on
+  // every unconfigured run. Only a configured upload that failed earns a line.
+  it("reports an upload skip only when `artifacts` was actually configured", () => {
+    expect(body).toContain("uploadSkipped: upload.ok || !config.artifacts ? null : upload.reason");
+  });
+
+  // The orchestrator invokes this stage from the repository root — that is what
+  // makes its relative --config and --run-dir paths resolve — and passes the
+  // worktree as --cwd. The key's `<repo>` segment is the checkout's name, so it
+  // must come from process.cwd() rather than from the worktree directory.
+  it("derives the object key's repo segment from the checkout, not the worktree", () => {
+    expect(body).toContain('repo: basename(resolvePath("."))');
+    expect(body).not.toContain("repo: basename(resolvePath(cwd))");
+  });
 });
 
 describe("main's run flags", () => {
@@ -557,5 +680,42 @@ describe("main's run flags", () => {
     const { calls, fn } = spy();
     await silently(() => main(["run", "--run-dir=/run/verify", "--spec=s.md", "--round=2"], fn));
     expect(calls[0].round).toBe(2);
+  });
+
+  // The printed line is what SKILL.md tells the orchestrator to turn into
+  // `verify: screenshot upload skipped — <reason>`, so what main prints and
+  // what the ledger gains are the same question.
+  const printed = async (result) => {
+    const out = [];
+    const log = console.log;
+    const exitCode = process.exitCode;
+    console.log = (m) => out.push(String(m));
+    try {
+      await main(["run", "--run-dir=/run/verify", "--spec=s.md"], async () => result);
+    } finally {
+      console.log = log;
+      process.exitCode = exitCode;
+    }
+    return out.join("\n");
+  };
+
+  it("prints the upload skip line when a configured upload failed", async () => {
+    const out = await printed({
+      code: EXIT.pass,
+      message: "2/2 ui criteria passed",
+      uploadSkipped: "artifacts config is missing public_base_url",
+    });
+    expect(out).toContain("upload: skipped — artifacts config is missing public_base_url");
+  });
+
+  // The unconfigured case: verify() reports no reason at all, so nothing is
+  // printed and the orchestrator appends nothing.
+  it("prints no upload line at all when there was nothing to skip", async () => {
+    const out = await printed({
+      code: EXIT.pass,
+      message: "2/2 ui criteria passed",
+      uploadSkipped: null,
+    });
+    expect(out).not.toContain("upload:");
   });
 });

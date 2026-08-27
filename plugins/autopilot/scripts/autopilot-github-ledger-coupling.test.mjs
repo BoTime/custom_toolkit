@@ -45,9 +45,11 @@ const STAGE_ENTRIES = [
 ];
 
 // The wrapper's lines interleaved at their hook points: the two start lines
-// straight after `started (phase 1)`, the two PR lines straight after `pr:`.
+// straight after `started (phase 1)`, the screenshots line straight after the
+// `verify:` entry, the two PR lines straight after `pr:`.
 const GITHUB_AFTER = {
   "started (phase 1)": ["github: moved to in-progress", "github: start comment posted"],
+  "verify: 3/3 ui criteria passed": ["github: verify screenshots posted"],
   "pr: https://example.com/pull/23": ["github: moved to in-review", "github: pr comment posted"],
 };
 

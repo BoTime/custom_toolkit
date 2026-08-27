@@ -4,14 +4,18 @@ import { pathToFileURL } from "node:url";
 import { loadConfig, validateGithubConfig } from "./autopilot-config.mjs";
 
 /**
- * The five ledger lines the autopilot-github wrapper's hooks append, in
+ * The six ledger lines the autopilot-github wrapper's hooks append, in
  * pipeline order.
  *
  * Exported so the wrapper's prose guard test and the ledger-coupling test share
  * one source of truth. Every line is `github: `-prefixed, which collides with
- * none of nextStage's seven resume prefixes (`pr:`, `rebase clean`,
- * `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
- * `design approved`) nor with `PARKED`.
+ * none of nextStage's nine resume prefixes (`pr:`, `rebase clean`,
+ * `learnings committed`, `verify`, `sdd complete`, `plan complete`,
+ * `spec committed`, `worktree:`, `design approved`) nor with `PARKED`.
+ *
+ * `verify` is the near miss to keep in mind when adding a line here: the
+ * `github: ` prefix is what keeps `github: verify screenshots posted` from
+ * resuming a finished run at `learnings`.
  *
  * Move and comment get separate lines rather than one per hook, so a hook that
  * moved the card but failed to comment resumes into the comment alone instead
@@ -20,6 +24,7 @@ import { loadConfig, validateGithubConfig } from "./autopilot-config.mjs";
 export const GITHUB_LEDGER_LINES = [
   "github: moved to in-progress",
   "github: start comment posted",
+  "github: verify screenshots posted",
   "github: moved to in-review",
   "github: pr comment posted",
   "github: parked comment posted",
@@ -313,6 +318,39 @@ export function comment(
   return result.stdout.trim();
 }
 
+/**
+ * The issue comment body for a screenshot manifest.
+ *
+ * One comment, one image per criterion, in manifest order. The status is
+ * spelled out beside each image because the reader is looking at the picture,
+ * not at the PR table it came from — and the prefix names the round the images
+ * came from, which is the run's latest: the comment is posted once, and a fix
+ * round rewrites the manifest it reads while leaving round 1's objects intact
+ * at their own keys.
+ *
+ * The public-URL warning is repeated here rather than left to the skill: the
+ * comment outlives the run, and whoever reads it later is exactly the person
+ * who needs to know the link is not private.
+ */
+export function screenshotComment(manifest) {
+  const mark = { pass: "✅", fail: "❌", missing: "⚠️" };
+  const lines = [
+    "## Browser verification screenshots",
+    "",
+    `One image per \`(ui)\` acceptance criterion, as the browser saw it (\`${manifest.prefix}\`).`,
+    "",
+  ];
+  for (const item of manifest.items ?? []) {
+    lines.push(`**${item.id}** — ${mark[item.status] ?? ""} ${item.status}`.trim(), "");
+    lines.push(`![${item.id}](${item.url})`, "");
+  }
+  lines.push(
+    "These images are hosted on an r2.dev public development URL: anyone with " +
+      "the link can read them.",
+  );
+  return lines.join("\n");
+}
+
 /** Minimal `--flag value` / `--flag=value` parsing; positionals land in `_`. */
 export function parseArgs(argv) {
   const out = { _: [] };
@@ -330,9 +368,9 @@ export function parseArgs(argv) {
 }
 
 const USAGE =
-  "usage: autopilot-github-issue.mjs <preflight|resolve|move|comment> " +
+  "usage: autopilot-github-issue.mjs <preflight|resolve|move|comment|screenshots> " +
   '[--issue <n>] [--write-ledger <base-dir>] [--to "<status>"] ' +
-  "[--body <text>|--body-file <path>]";
+  "[--body <text>|--body-file <path>] [--manifest <path>]";
 
 function ghRun(args) {
   const r = spawnSync("gh", args, { encoding: "utf8" });
@@ -404,6 +442,39 @@ export function main(
         gh,
       );
       console.log(posted || `commented on issue #${issue}`);
+      return;
+    }
+
+    if (command === "screenshots") {
+      const issue = requireIssue(args);
+      if (!args.manifest) throw new Error("screenshots needs --manifest <path>");
+      const readFile = fsOps.readFile ?? ((p) => readFileSync(p, "utf8"));
+      let manifest;
+      try {
+        manifest = JSON.parse(readFile(args.manifest));
+      } catch {
+        // Absent or malformed is the no-artifacts-configured case, and it must
+        // stay a clean no-op with a zero exit: a non-zero here would make the
+        // wrapper record a `github: <action> failed` line in a repository that
+        // simply never asked for screenshots.
+        console.log(`skipped — no screenshot manifest at ${args.manifest}`);
+        return;
+      }
+      // The type check comes first for the same reason the catch above exists:
+      // `JSON.parse` succeeds on `null` and on a bare number, and reading
+      // `.items` off either throws into the outer catch and exits non-zero —
+      // the one outcome an unconfigured repository must never reach.
+      if (
+        !manifest ||
+        typeof manifest !== "object" ||
+        !Array.isArray(manifest.items) ||
+        manifest.items.length === 0
+      ) {
+        console.log(`skipped — screenshot manifest at ${args.manifest} has no items`);
+        return;
+      }
+      comment(issue, { body: screenshotComment(manifest) }, gh);
+      console.log(`posted ${manifest.items.length} screenshots to issue #${issue}`);
       return;
     }
 

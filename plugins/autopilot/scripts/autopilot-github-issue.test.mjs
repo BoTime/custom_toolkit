@@ -28,6 +28,7 @@ import {
   findStatusOption,
   move,
   comment,
+  screenshotComment,
   main,
 } from "./autopilot-github-issue.mjs";
 
@@ -64,10 +65,11 @@ const CONFIG = {
 };
 
 describe("GITHUB_LEDGER_LINES", () => {
-  it("lists the five lines the wrapper's hooks append, all github:-prefixed", () => {
+  it("lists the six lines the wrapper's hooks append, all github:-prefixed", () => {
     expect(GITHUB_LEDGER_LINES).toEqual([
       "github: moved to in-progress",
       "github: start comment posted",
+      "github: verify screenshots posted",
       "github: moved to in-review",
       "github: pr comment posted",
       "github: parked comment posted",
@@ -623,5 +625,150 @@ describe("main — move and comment", () => {
     main(["comment", "--issue", "42", "--body", "x"], gh, () => ({ config: CONFIG }));
     expect(process.exitCode).toBe(1);
     expect(out.join("\n")).toContain("404");
+  });
+});
+
+describe("screenshotComment", () => {
+  const manifest = {
+    base: "https://pub-abcd1234.r2.dev",
+    prefix: "custom_toolkit/issue-42/round-1",
+    items: [
+      { id: "AC1", status: "pass", url: "https://pub-abcd1234.r2.dev/x/AC1.png" },
+      { id: "AC3", status: "fail", url: "https://pub-abcd1234.r2.dev/x/AC3.png" },
+    ],
+  };
+
+  it("embeds one image per criterion, with its status beside it", () => {
+    const body = screenshotComment(manifest);
+    expect(body).toContain("![AC1](https://pub-abcd1234.r2.dev/x/AC1.png)");
+    expect(body).toContain("![AC3](https://pub-abcd1234.r2.dev/x/AC3.png)");
+    expect(body).toContain("**AC1**");
+    expect(body).toContain("pass");
+    expect(body).toContain("fail");
+  });
+
+  it("names the run prefix so two rounds are told apart in the thread", () => {
+    expect(screenshotComment(manifest)).toContain("custom_toolkit/issue-42/round-1");
+  });
+
+  it("warns in the comment itself that the images are public", () => {
+    expect(screenshotComment(manifest)).toMatch(/anyone with the link/i);
+  });
+});
+
+// Same conventions as `describe("main — move and comment")` above: reset
+// process.exitCode around each case, and capture console output through vi.
+describe("main — screenshots", () => {
+  beforeEach(() => {
+    process.exitCode = 0;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.exitCode = 0;
+  });
+
+  const capture = () => {
+    const out = [];
+    vi.spyOn(console, "log").mockImplementation((m) => out.push(String(m)));
+    vi.spyOn(console, "error").mockImplementation((m) => out.push(String(m)));
+    return out;
+  };
+
+  const manifest = {
+    base: "https://pub-abcd1234.r2.dev",
+    prefix: "custom_toolkit/issue-42/round-1",
+    items: [{ id: "AC1", status: "pass", url: "https://pub-abcd1234.r2.dev/x/AC1.png" }],
+  };
+
+  const recorder = (calls) => (args) => {
+    calls.push(args);
+    return ok("https://github.com/o/r/issues/42#c1");
+  };
+
+  it("posts one issue comment carrying the images", () => {
+    capture();
+    const calls = [];
+    main(
+      ["screenshots", "--issue", "42", "--manifest", "/run/uploads.json"],
+      recorder(calls),
+      undefined,
+      { readFile: () => JSON.stringify(manifest) },
+    );
+    expect(process.exitCode).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toBe("issue");
+    expect(calls[0][1]).toBe("comment");
+    expect(calls[0].join(" ")).toContain("![AC1](https://pub-abcd1234.r2.dev/x/AC1.png)");
+  });
+
+  // A repository with no `artifacts` block must reach exactly the ledger it
+  // reached before this hook existed: nothing posted, nothing appended, and
+  // above all no non-zero exit for the wrapper to record as a failure.
+  it("is a clean no-op when the manifest is absent", () => {
+    const out = capture();
+    const calls = [];
+    main(
+      ["screenshots", "--issue", "42", "--manifest", "/run/uploads.json"],
+      recorder(calls),
+      undefined,
+      {
+        readFile: () => {
+          throw new Error("ENOENT");
+        },
+      },
+    );
+    expect(process.exitCode).toBe(0);
+    expect(calls).toHaveLength(0);
+    expect(out.join("\n")).toContain("skipped — no screenshot manifest at /run/uploads.json");
+  });
+
+  it("is a clean no-op when the manifest carries no items", () => {
+    capture();
+    const calls = [];
+    main(
+      ["screenshots", "--issue", "42", "--manifest", "/run/uploads.json"],
+      recorder(calls),
+      undefined,
+      { readFile: () => JSON.stringify({ base: "b", prefix: "p", items: [] }) },
+    );
+    expect(process.exitCode).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  // `JSON.parse` succeeds on `null` and on a bare number, so the parse's own
+  // catch does not cover them. Without a type check, reading `.items` off
+  // either throws into the outer catch and exits non-zero — which is the one
+  // outcome this whole path exists to keep away from an unconfigured repo.
+  it.each([["null", "null"], ["a bare number", "42"], ["a string", '"nope"']])(
+    "is a clean no-op when the manifest parses to %s",
+    (_label, raw) => {
+      const out = capture();
+      const calls = [];
+      main(
+        ["screenshots", "--issue", "42", "--manifest", "/run/uploads.json"],
+        recorder(calls),
+        undefined,
+        { readFile: () => raw },
+      );
+      expect(process.exitCode).toBe(0);
+      expect(calls).toHaveLength(0);
+      expect(out.join("\n")).toContain("skipped — ");
+    },
+  );
+
+  it("exits non-zero when --manifest is not given at all", () => {
+    capture();
+    main(["screenshots", "--issue", "42"], recorder([]), undefined, {});
+    expect(process.exitCode).toBe(1);
+  });
+
+  // A subcommand the usage string does not list is a subcommand nobody finds.
+  it("is listed in the usage string an unknown command prints", () => {
+    const out = capture();
+    main(["nonsense"], recorder([]), undefined, {});
+    expect(process.exitCode).toBe(1);
+    expect(out.join("\n")).toContain("screenshots");
+    expect(out.join("\n")).toContain("--manifest");
   });
 });

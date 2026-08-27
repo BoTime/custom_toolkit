@@ -618,6 +618,36 @@ these lines yourself; the script has already written them.
 
 Append: `verify: <n>/<n> ui criteria passed`.
 
+#### Screenshots
+
+When the project's `.claude/autopilot.json` carries an `artifacts` block, the
+`run` subcommand also uploads one screenshot per UI criterion to the configured
+bucket and writes `verify/artifacts/uploads.json`. Nothing is dispatched and
+nothing is configured at this stage: the script does it, and the
+criterion-to-image mapping is derived from Playwright's JSON report, never from
+the agent — which is why the browser-verification contract's rule 4 still
+stands untouched.
+
+When it cannot — an unreadable env file, a missing credential, a failed upload —
+the run **does not park**. The section degrades to its text-only form and the
+script prints one extra line:
+
+```
+upload: skipped — <reason>
+```
+
+Append `verify: screenshot upload skipped — <reason>` when, and only when, that
+line is printed. Place it immediately **after** this stage's own `verify:`
+entry — or, when the stage is parking, immediately **before** the
+`PARKED — <reason>` entry, in the same step. `PARKED` must stay the ledger's
+last entry, or `nextStage` stops returning `parked` and a parked run reads as
+resumable.
+
+A repository with **no `artifacts` block at all** is not a failed upload: the
+script prints no such line, so there is none to append. Its ledger, its PR body
+section and its issue comments are exactly what they were before screenshots
+existed — that is the point, and it needs no feature flag.
+
 ### `learnings`
 
 Dispatch the `learnings` role to rewrite `docs/autopilot/learnings.md` inside
@@ -726,10 +756,20 @@ and the skipped case, so this stage formats nothing — it concatenates. A run
 whose `verify` stage never wrote one (an older run resumed, say) simply has no
 section, which is why the `cat` is guarded.
 
-Screenshots and traces stay local to the run directory and are **not** attached
-to the PR: `gh pr edit` takes markdown, and an image only renders from a URL,
-which would mean committing the files. The section names the artifact path
-instead.
+Screenshots reach the PR through a URL, not through the repository. When the
+project configures an `artifacts` block, the `verify` stage has already uploaded
+one image per UI criterion and written `verify/artifacts/uploads.json`, and the
+section it wrote already carries a `Screenshot` column built from that manifest
+— so this stage still concatenates and still formats nothing. With no manifest,
+the section renders exactly as it always has: text-only, naming the local
+artifact path. Traces are never uploaded. They are a debugging artifact for a
+human at a terminal, and they stay local.
+
+An r2.dev public development URL is **world-readable**. Anything visible in a
+verified screenshot — seeded user data, an internal admin surface, a staging
+banner — is public to anyone with the link. That is an acceptable trade for a
+bucket seeded with fixture data and an unacceptable one for a bucket that ever
+sees production screens, so point `artifacts` at the former.
 
 The body file goes in the run directory, not `/tmp` — it is scoped to this
 branch, so two runs finishing at once cannot overwrite each other's PR body.

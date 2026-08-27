@@ -2,8 +2,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, appendFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve as resolvePath } from "node:path";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { uploadScreenshots } from "./autopilot-artifacts.mjs";
 import { loadConfig } from "./autopilot-config.mjs";
 
 /**
@@ -85,23 +86,30 @@ export const uiCriteria = (criteria) => criteria.filter((c) => c.kind === "ui");
 /**
  * Flatten Playwright's JSON report into a verdict.
  *
- * Only the outcome and the first error message per failing test are kept.
- * The full report stays on disk: the verify agent is under a contract not to
- * read it, and this is what makes that contract followable.
+ * The outcome, the first error message per failing test, and the local path of
+ * that spec's screenshot are kept. The full report stays on disk: the verify
+ * agent is under a contract not to read it, and this is what makes that
+ * contract followable — a path is not an image, and nothing here reads one.
+ *
+ * `attachments` is singular-valued despite its plural name. The name is fixed
+ * by the design spec; the value is one path or null, because a spec produces at
+ * most one screenshot and the trace beside it is deliberately not published.
  */
 export function summarize(report) {
   const results = [];
   const walk = (suite) => {
     for (const spec of suite.specs ?? []) {
       const failed = (spec.tests ?? []).some((t) => t.status !== "expected");
-      const message = (spec.tests ?? [])
-        .flatMap((t) => t.results ?? [])
-        .map((r) => r.error?.message)
-        .find(Boolean);
+      const runs = (spec.tests ?? []).flatMap((t) => t.results ?? []);
+      const message = runs.map((r) => r.error?.message).find(Boolean);
+      const shot = runs
+        .flatMap((r) => r.attachments ?? [])
+        .find((a) => a?.contentType === "image/png" && a?.path);
       results.push({
         title: spec.title,
         ok: !failed,
         message: failed ? (message ?? "failed with no error message").split("\n")[0] : null,
+        attachments: shot?.path ?? null,
       });
     }
     for (const child of suite.suites ?? []) walk(child);
@@ -129,25 +137,59 @@ export function summarize(report) {
 export function attribute(criteria, summary) {
   return uiCriteria(criteria).map((c) => {
     const match = summary.results.find((r) => r.title.toUpperCase().startsWith(c.id));
-    if (!match) return { ...c, status: "missing", message: "no test covered this criterion" };
-    return { ...c, status: match.ok ? "pass" : "fail", message: match.message };
+    if (!match) {
+      return { ...c, status: "missing", message: "no test covered this criterion", screenshot: null };
+    }
+    return {
+      ...c,
+      status: match.ok ? "pass" : "fail",
+      message: match.message,
+      screenshot: match.attachments ?? null,
+    };
   });
 }
 
-/** The PR body section. Kept text-only: artifacts stay local to the run. */
-export function formatVerifySection(rows, { artifactsDir, skipped } = {}) {
+/**
+ * The PR body section.
+ *
+ * Two shapes, decided by one thing: whether the upload produced a manifest.
+ * With one, each row gains a thumbnail that links to the full image, so a
+ * reviewer reading `AC3 — ✅` sees what the browser saw instead of trusting a
+ * line of markdown a script wrote. With none — no `artifacts` block, an
+ * unreadable env file, a failed PUT — this renders byte-for-byte what it
+ * rendered before screenshots existed. That equivalence is the feature's whole
+ * safety story, and it is pinned by a test.
+ *
+ * The local artifacts path is named in both shapes: the trace beside each
+ * screenshot is never uploaded, and it is on disk either way.
+ */
+export function formatVerifySection(rows, { artifactsDir, skipped, manifest } = {}) {
   const lines = ["## Browser verification", ""];
   if (skipped) {
     lines.push(`Skipped — ${skipped}.`);
     return lines.join("\n");
   }
 
-  lines.push("| Criterion | Result |", "| --- | --- |");
+  const shots = new Map((manifest?.items ?? []).map((item) => [item.id, item.url]));
+  const withShots = shots.size > 0;
+
+  lines.push(
+    withShots ? "| Criterion | Result | Screenshot |" : "| Criterion | Result |",
+    withShots ? "| --- | --- | --- |" : "| --- | --- |",
+  );
   const mark = { pass: "✅", fail: "❌", missing: "⚠️ not covered" };
   for (const row of rows) {
     const label = `${row.id} — ${row.text}`.replaceAll("|", "\\|");
     const detail = row.status === "pass" ? "" : ` ${(row.message ?? "").replaceAll("|", "\\|")}`;
-    lines.push(`| ${label} | ${mark[row.status]}${detail} |`);
+    if (!withShots) {
+      lines.push(`| ${label} | ${mark[row.status]}${detail} |`);
+      continue;
+    }
+    const url = shots.get(row.id);
+    // A linked thumbnail rather than a bare image: the image is wrapped in a
+    // link to itself, so a click reaches the full-size original.
+    const cell = url ? `[![${row.id}](${url})](${url})` : "—";
+    lines.push(`| ${label} | ${mark[row.status]}${detail} | ${cell} |`);
   }
 
   const passed = rows.filter((r) => r.status === "pass").length;
@@ -197,7 +239,7 @@ module.exports = {
   use: {
     baseURL: ${JSON.stringify(baseURL)},
     headless: true,
-    screenshot: "only-on-failure",
+    screenshot: "on",
     trace: "retain-on-failure",
     video: "off",
   },
@@ -507,7 +549,37 @@ export async function verify({ configPath, runDir, cwd, specPath, round = 1 }) {
     }
 
     const rows = attribute(parsed.criteria, summary);
-    writeFileSync(join(runDir, "pr-section.md"), formatVerifySection(rows, { artifactsDir }), "utf8");
+
+    // The upload is inside the stage rather than dispatched, and the manifest
+    // is handed straight to the formatter rather than read back off disk: the
+    // criterion-to-image mapping is derived from Playwright's own report, and
+    // no agent is asked about a screenshot at any point.
+    //
+    // `runDir` is `<base>/<run>/verify`, so the run name is its parent's
+    // basename — the same one-level-up move `appendFindings` makes for the
+    // findings corpus.
+    // `cwd` is the worktree, whose directory name is the run's, not the
+    // repository's; `process.cwd()` is the main checkout, because the
+    // orchestrator runs every stage from the repository root — which is what
+    // makes its relative `--config` and `--run-dir` paths resolve at all. So
+    // the key's `<repo>` segment comes from the latter.
+    const upload = await uploadScreenshots({
+      config,
+      rows,
+      repo: basename(resolvePath(".")),
+      run: basename(resolvePath(join(runDir, ".."))),
+      round,
+      artifactsDir,
+    });
+
+    writeFileSync(
+      join(runDir, "pr-section.md"),
+      formatVerifySection(rows, {
+        artifactsDir,
+        manifest: upload.ok ? upload.manifest : undefined,
+      }),
+      "utf8",
+    );
     appendFindings(runDir, findingsLines(rows, { round }));
 
     // A criterion with no test is a gap in this stage, not a pass, so it is
@@ -522,6 +594,11 @@ export async function verify({ configPath, runDir, cwd, specPath, round = 1 }) {
       summary,
       rows,
       artifactsDir,
+      // A repository that never configured `artifacts` reports nothing: the
+      // reason it would carry says only that no block exists, and printing it
+      // makes the orchestrator append a ledger line that repository never had.
+      // Only a configured upload that then failed is worth a line.
+      uploadSkipped: upload.ok || !config.artifacts ? null : upload.reason,
     };
   } finally {
     if (started) teardown({ child: started.child, stopCommand: stop_command, cwd });
@@ -572,6 +649,7 @@ export async function main(argv = process.argv.slice(2), runVerify = verify) {
     });
     console.log(`status: ${Object.keys(EXIT).find((k) => EXIT[k] === result.code)}`);
     console.log(result.message);
+    if (result.uploadSkipped) console.log(`upload: skipped — ${result.uploadSkipped}`);
     process.exitCode = result.code;
     return;
   }

@@ -69,6 +69,16 @@ describe("verify token contract", () => {
     expect(verifyPrompt).toMatch(/never read `results\.json` whole/i);
   });
 
+  // The whole point of deriving the criterion-to-image mapping from the JSON
+  // report is that the agent never learns a screenshot exists. Publishing them
+  // must not have leaked a single path, filename or manifest into the prompt.
+  it("still asks the agent for no screenshot of any kind", () => {
+    expect(verifyPrompt).toMatch(/never read a screenshot back/i);
+    expect(verifyPrompt).not.toMatch(/uploads\.json/);
+    expect(verifyPrompt).not.toMatch(/\.png/);
+    expect(verifyPrompt).not.toMatch(/r2\.dev/);
+  });
+
   it("tells the agent to derive locators from worktree source", () => {
     expect(verifyPrompt).toMatch(/derive locators from the worktree source/i);
     expect(verifyPrompt).toMatch(/getByRole/);
@@ -155,6 +165,12 @@ describe("verify outcomes", () => {
     for (const code of Object.values(EXIT)) {
       expect(verify).toMatch(new RegExp(`\\|\\s*${code}\\s*\\|`));
     }
+  });
+
+  it("names the screenshot-upload skip line and its park ordering", () => {
+    expect(verify).toContain("verify: screenshot upload skipped — <reason>");
+    expect(verify).toMatch(/does not park/i);
+    expect(verify).toMatch(/before[^.]{0,120}PARKED/i);
   });
 });
 
@@ -273,9 +289,23 @@ describe("pr stage carries the verification result", () => {
     expect(pr).toMatch(/this stage formats nothing/i);
   });
 
-  it("is honest that screenshots do not reach the PR", () => {
+  // The old sentence said screenshots never reach the PR. They do now, through
+  // a URL rather than through the repository, and a skill that asserts the
+  // opposite of what the pipeline does is worse than one that says nothing.
+  it("describes the manifest-driven screenshots and how they degrade", () => {
     const pr = unwrap(skill.slice(skill.indexOf("### `pr`")));
-    expect(pr).toMatch(/stay local to the run directory and are \*{0,2}not\*{0,2} attached/i);
+    expect(pr).toContain("uploads.json");
+    expect(pr).toMatch(/with no manifest/i);
+    expect(pr).toMatch(/this stage formats nothing|concatenates/i);
+    expect(pr).not.toMatch(/stay local to the run directory and are \*{0,2}not\*{0,2} attached/i);
+  });
+
+  // An r2.dev Public Development URL is world-readable. A reader must not have
+  // to infer that from the phrase "public development URL".
+  it("says plainly that the published images are world-readable", () => {
+    const pr = unwrap(skill.slice(skill.indexOf("### `pr`")));
+    expect(pr).toMatch(/world-readable/i);
+    expect(pr).toMatch(/anyone with the link/i);
   });
 });
 

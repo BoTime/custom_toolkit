@@ -141,6 +141,7 @@ run rather than reporting green.
 | `browser.ready_timeout_ms` | `120000` | How long `verify` waits for the app to answer before calling the stack dead |
 | `minimalism.mode` | `off` | `off` / `lite` / `full` — injects a YAGNI ladder into the `plan` and `sdd` dispatch prompts. At `off` both prompts are unchanged. |
 | `github` | four status names | Projects v2 wiring for `/autopilot-github` only. Ignored by plain `/autopilot`. |
+| `artifacts` | *(none)* | Where `verify` publishes its screenshots. Absent → screenshots stay local and the PR body is text-only. |
 
 `/autopilot-github` additionally needs the two keys that cannot be guessed. The
 four status names merge per key from the defaults, so this is usually the whole
@@ -164,6 +165,47 @@ naming the key — it never guesses.
 
 `CLAUDE_CODE_EFFORT_LEVEL` in the environment overrides every configured
 effort level.
+
+#### Publishing verify screenshots (optional)
+
+`verify` always captures one browser screenshot per `(ui)` criterion into the
+run directory. With an `artifacts` block it also uploads each one to an
+S3-compatible bucket (Cloudflare R2) and renders it in the PR body — and, under
+`/autopilot-github`, in the issue thread:
+
+```json
+{
+  "artifacts": {
+    "env_file": "apps/api/.env",
+    "bucket": "autopilot-artifacts",
+    "public_base_url": "https://pub-XXXXXXXX.r2.dev"
+  }
+}
+```
+
+| Key | Purpose |
+|---|---|
+| `env_file` | Project-relative path to the env file holding the credentials |
+| `bucket` | The bucket the screenshots are written to |
+| `public_base_url` | The bucket's public URL, which the rendered links are built from. R2 assigns this per bucket; it cannot be derived from the account id |
+
+**No credential goes in `.claude/autopilot.json`.** The three the signer needs —
+`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` — are read from
+the env file named above, which is the project's own and already git-ignored.
+Autopilot never writes them anywhere: not into the repository, the PR body, an
+issue comment, a ledger entry or a skip reason, which name keys and variables
+only. `R2_BUCKET` in that same file names the *application's* bucket and is
+deliberately not read, so test evidence never lands in production storage.
+
+**An r2.dev public development URL is world-readable.** Anything visible in a
+verified screenshot — seeded user data, an internal admin surface — is public to
+anyone with the link. Point `artifacts` at a bucket whose contents you are
+willing to make public.
+
+The block is entirely optional and nothing about it can park a run. With no
+`artifacts` block, or with an unreadable env file, a missing credential or a
+failed upload, the run degrades to exactly the text-only PR section it produced
+before screenshots existed.
 
 #### Pointing ponytail at autopilot's own roles (optional)
 
