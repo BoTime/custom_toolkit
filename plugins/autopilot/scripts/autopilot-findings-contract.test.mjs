@@ -132,8 +132,24 @@ describe("plugin packaging", () => {
     readFileSync(join(HERE, "..", ".claude-plugin", "plugin.json"), "utf8"),
   );
 
+  const codexPluginJson = JSON.parse(
+    readFileSync(join(HERE, "..", ".codex-plugin", "plugin.json"), "utf8"),
+  );
+
   it("registers the commands directory so the new command loads", () => {
     expect(pluginJson.commands).toEqual(["./commands/"]);
+  });
+
+  it("ships a Codex manifest that exposes the skills", () => {
+    expect(codexPluginJson).toMatchObject({
+      name: "autopilot",
+      version: expect.stringMatching(/^\d+\.\d+\.\d+(?:\+codex\.[\w.-]+)?$/),
+      skills: "./skills/",
+      interface: {
+        displayName: "Autopilot",
+        category: "Productivity",
+      },
+    });
   });
 
   // No assertion pins the version literal here. scripts/bump-version.mjs now

@@ -41,9 +41,9 @@ stage's dispatch tells the subagent what to read.
 The plugin's `scripts/` and `references/` do **not** live in your human
 partner's project, so every command below needs the plugin's absolute path.
 
-**`$CLAUDE_PLUGIN_ROOT` is not set in Bash tool calls** — it is populated only
-for processes the plugin system launches, such as hooks. It yields an empty
-string and `ERR_MODULE_NOT_FOUND`.
+**Do not rely on a plugin-root environment variable in Bash tool calls.** The
+host may set one only for processes it launches, such as hooks; in an agent
+shell it can be empty and lead to `ERR_MODULE_NOT_FOUND`.
 
 When this skill loaded, the harness prefixed it with
 `Base directory for this skill: <abs path>`, pointing at
@@ -57,10 +57,11 @@ ls "$AP/scripts/autopilot-config.mjs"   # must exist; if not, stop
 
 Substitute that literal path into every `"$AP/..."` below — you write each
 command fresh, and shell variables do not persist between Bash calls. If the
-base-directory line is absent, fall back, and stop if this finds nothing:
+base-directory line is absent, fall back to either supported host's plugin
+cache, and stop if this finds nothing:
 
 ```bash
-ls ~/.claude/plugins/cache/*/autopilot/*/scripts/autopilot-config.mjs 2>/dev/null
+find ~/.claude/plugins/cache ~/.codex/plugins/cache -path '*/autopilot/*/scripts/autopilot-config.mjs' -type f 2>/dev/null
 ```
 
 ## Preflight

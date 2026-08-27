@@ -1,0 +1,22 @@
+{
+  "name": "autopilot",
+  "version": "1.8.2+codex.20260826",
+  "description": "Take a task from idea to pull request through a guided brainstorm and staged delivery workflow.",
+  "author": {
+    "name": "Botime"
+  },
+  "license": "MIT",
+  "keywords": ["workflow", "automation", "pull-request", "planning"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Autopilot",
+    "shortDescription": "Take a task from idea to pull request.",
+    "longDescription": "Guides a task through brainstorm, specification, plan, implementation, verification, landing, and pull request stages.",
+    "developerName": "Botime",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Use autopilot to take this task from idea to pull request."
+    ]
+  }
+}

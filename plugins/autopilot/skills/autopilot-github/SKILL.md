@@ -49,7 +49,7 @@ Identical to autopilot's own "Locating the plugin's scripts" section, with one
 difference: this skill's base directory is `<plugin root>/skills/autopilot-github`,
 so the plugin root is that path with `/skills/autopilot-github` removed.
 
-`$CLAUDE_PLUGIN_ROOT` is **not** set in Bash tool calls. Resolve the path once
+Do not rely on a plugin-root environment variable in Bash tool calls. Resolve the path once
 and substitute the literal value into every `"$AP"/...` command below — you
 write each command fresh, and shell variables do not persist between Bash calls.
 

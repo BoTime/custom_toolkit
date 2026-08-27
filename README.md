@@ -1,7 +1,7 @@
 # custom_toolkit
 
-Personal [Claude Code](https://claude.com/claude-code) plugins. The repo is
-both the marketplace and the home of the plugins it lists.
+Personal [Claude Code](https://claude.com/claude-code) and Codex plugins. The
+repo is both the marketplace and the home of the plugins it lists.
 
 ## Install
 
@@ -11,6 +11,17 @@ both the marketplace and the home of the plugins it lists.
 ```
 
 To update later: `/plugin marketplace update custom-toolkit`.
+
+### Codex
+
+```bash
+codex plugin marketplace add BoTime/custom_toolkit
+codex plugin add autopilot@custom-toolkit
+```
+
+After installing or updating the plugin, start a new Codex thread so its
+skills are discovered. Autopilot's full staged workflow also requires its
+companion workflow skills to be installed in Codex.
 
 ## Plugins
 
@@ -246,7 +257,7 @@ claude --plugin-dir ./plugins/autopilot     # load locally for one session
 The plugin's helper scripts use only the Node standard library, so the plugin
 ships with zero runtime dependencies; vitest is the sole devDependency.
 
-Scripts bundled with a plugin are referenced through `$CLAUDE_PLUGIN_ROOT`,
-which resolves to the plugin's install directory. Paths that belong to the
-*user's* project — the run ledger under `.superpowers/`, worktrees, the spec
-output — stay project-relative.
+Scripts bundled with a plugin are located from the skill's base directory,
+which resolves to the plugin's install directory in either host. Paths that
+belong to the *user's* project — the run ledger under `.superpowers/`,
+worktrees, the spec output — stay project-relative.
