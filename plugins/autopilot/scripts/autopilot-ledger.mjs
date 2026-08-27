@@ -24,12 +24,25 @@ export function parseLedger(contents) {
   return { task, entries };
 }
 
+/**
+ * Entries that record something about the run without advancing it.
+ *
+ * `nextStage` detects a park by reading the LAST entry, so an informational
+ * line appended after a `PARKED` line would unpark the run — a parked branch
+ * would silently resume into the stage that parked it. Anything appended
+ * purely for the record belongs here.
+ */
+const INFORMATIONAL = /^tier(:| escalated:)/;
+
 export function nextStage(ledger) {
   const has = (prefix) => ledger.entries.some((e) => e.text.startsWith(prefix));
 
-  // Check if the last entry is a PARKED line (currently parked, not historical)
-  if (ledger.entries.length > 0) {
-    const lastEntry = ledger.entries[ledger.entries.length - 1];
+  // Check if the last stage-advancing entry is a PARKED line (currently
+  // parked, not historical). Informational entries are skipped: they may
+  // legitimately land after a park.
+  const advancing = ledger.entries.filter((e) => !INFORMATIONAL.test(e.text));
+  if (advancing.length > 0) {
+    const lastEntry = advancing[advancing.length - 1];
     if (lastEntry.text.startsWith("PARKED")) return "parked";
   }
 

@@ -25,6 +25,7 @@ import {
   between,
 } from "./skill-sections.mjs";
 import { STAGES } from "./autopilot-dispatch.mjs";
+import { TIERS } from "./autopilot-config.mjs";
 import { defaultConfig } from "./dispatch-fixture.mjs";
 
 
@@ -234,17 +235,24 @@ describe("the real skill's references resolve", () => {
     const declared = new Set();
     for (const [, entry] of Object.entries(STAGES)) {
       declared.add(entry.body);
-      // Both minimalism modes and both learnings branches, so a fragment
-      // reachable only under one setting is not reported as an orphan.
+      // Both minimalism modes, both learnings branches, and both the absent
+      // and single-task values, so a fragment reachable only under one
+      // setting is not reported as an orphan.
       for (const mode of ["off", "lite", "full"]) {
         for (const has of [true, false]) {
-          const config = defaultConfig({ minimalism: { mode } });
-          for (const f of entry.fragments({ config, worktreeHas: () => has })) {
-            if (typeof f === "string") declared.add(f);
+          for (const values of [undefined, { tasks: "1" }]) {
+            const config = defaultConfig({ minimalism: { mode } });
+            for (const f of entry.fragments({ config, worktreeHas: () => has, values })) {
+              if (typeof f === "string") declared.add(f);
+            }
           }
         }
       }
     }
+    // The tier budgets reach `compose` as rendered `{text}` rather than a file
+    // name, so no `fragments()` call can name them. Deriving them from TIERS
+    // still reports a fourth tier file nobody wired up.
+    for (const tier of TIERS) declared.add(`plan-budget-${tier}.md`);
     const dispatchDir = join(SKILL_DIR, "references", "dispatch");
     const orphans = readdirSync(dispatchDir)
       .filter((f) => f.endsWith(".md"))

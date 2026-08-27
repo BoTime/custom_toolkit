@@ -16,14 +16,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULTS_PATH = join(HERE, "..", "autopilot.default.json");
 
 /**
- * The plugin's shipped defaults, optionally with the `minimalism` block
- * replaced or removed. `minimalism: null` deletes the key entirely — which is
- * how the byte-identity pin builds a config that predates the key.
+ * The plugin's shipped defaults, optionally with the `minimalism` or `tiers`
+ * block replaced or removed. Passing `null` deletes the key entirely — which
+ * is how the byte-identity pin builds a config that predates a key.
  */
-export function defaultConfig({ minimalism } = {}) {
+export function defaultConfig({ minimalism, tiers } = {}) {
   const config = JSON.parse(readFileSync(DEFAULTS_PATH, "utf8"));
   if (minimalism === null) delete config.minimalism;
   else if (minimalism !== undefined) config.minimalism = minimalism;
+  if (tiers === null) delete config.tiers;
+  else if (tiers !== undefined) config.tiers = tiers;
   return config;
 }
 
@@ -41,13 +43,19 @@ export function dummyValues(stage) {
  * The stage's composed definition, exactly as a dispatch would carry it.
  *
  * `hasLearnings` answers the `plan` stage's worktree check; it defaults to
- * true so assertions about the learnings instruction see it.
+ * true so assertions about the learnings instruction see it. `extraValues`
+ * carries the reserved flags that select a fragment rather than filling a
+ * placeholder — `tier` and `tasks` — which `dummyValues` cannot derive
+ * because they appear in no body template.
  */
-export function composeStage(stage, { minimalism, hasLearnings = true } = {}) {
+export function composeStage(
+  stage,
+  { minimalism, tiers, hasLearnings = true, extraValues = {} } = {},
+) {
   return compose({
     stage,
-    config: defaultConfig({ minimalism }),
-    values: dummyValues(stage),
+    config: defaultConfig({ minimalism, tiers }),
+    values: { ...dummyValues(stage), ...extraValues },
     worktreeHas: () => hasLearnings,
   });
 }

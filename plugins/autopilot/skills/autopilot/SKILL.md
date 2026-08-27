@@ -178,6 +178,19 @@ re-capture the same batch on every resume.
 `learnings` failure is logged and passed over. The run's product is the pull
 request; a missing question log is a reporting defect.
 
+The brainstorm's handoff ends with `tier: <small|standard|large>`. Append that
+line to the ledger verbatim, immediately after `design approved`:
+
+```
+2026-08-26T14:03:00Z  design approved
+2026-08-26T14:03:01Z  tier: small
+```
+
+The tier caps how far `plan` may decompose the work. It never decides which
+documents get written — `spec` and `plan` run on every tier. If the handoff
+carries no tier, append nothing and omit `--tier` at the `plan` dispatch: the
+run gets the untiered budget, which is more ceremony rather than less.
+
 **The brainstorm's handoff ends Phase 1.** Append `design approved` and go
 straight into `setup` in the same turn. Do not re-present the design, do not
 summarize it back for confirmation, and do not ask whether to proceed. The
@@ -353,18 +366,28 @@ node "$AP/scripts/autopilot-dispatch.mjs" plan \
   --run=<run> \
   --config=.claude/autopilot.json \
   --worktree=<worktree path> \
-  --spec-path=<path-to-spec>
+  --spec-path=<path-to-spec> \
+  --tier=<tier>
 ```
 
 Dispatch by the printed path.
 
+`--tier` is the `tier:` entry's value, read from the ledger you re-read before
+dispatching. **Omit the flag entirely when the ledger has no `tier:` entry** —
+a resumed run whose ledger predates tiering, or a brainstorm that returned no
+tier. Do not guess one. An unrecognised value is a compose-time error naming
+the three accepted values, because a typo would otherwise produce a run whose
+ceremony nobody chose.
+
 Task count is the single largest driver of a run's wall-clock time, so the
-composed definition carries a task-count budget. It also carries a minimalism
-ladder when `minimalism.mode` is `lite` or `full`, and a learnings instruction
-when the worktree has `docs/autopilot/learnings.md` — the plan agent is the one
-consumer of the run's accumulated learnings, and every other stage is
-deliberately learnings-free. The script reads all three conditions from merged
-config and the worktree; there is nothing to gate by hand.
+composed definition carries a task-count budget — the tier's ceiling when
+`--tier` is present, and the untiered 1–5 range when it is not. It also
+carries a minimalism ladder when `minimalism.mode` is `lite` or `full`, and a
+learnings instruction when the worktree has `docs/autopilot/learnings.md` —
+the plan agent is the one consumer of the run's accumulated learnings, and
+every other stage is deliberately learnings-free. The script reads all three
+conditions from merged config and the worktree; there is nothing to gate by
+hand.
 
 The plan ladder governs task decomposition only — `sdd` carries a separate
 minimalism contract about how code gets written, and the two must not be
@@ -412,6 +435,19 @@ Three rules travel with it:
 3. **Do not verify the recipe by running it.** A wrong derivation surfaces as a
    `verify` park several stages later.
 
+If the plan agent's return line reports an escalation, append the escalation
+first, then the completion — so `plan complete` stays the last entry and the
+resume path is unambiguous:
+
+```
+tier escalated: small → standard — the config block and the dispatch wiring cannot be reviewed as one diff
+plan complete → docs/superpowers/plans/2026-08-26-x-plan.md (2 tasks)
+```
+
+Escalation is the plan stage's own one-step move and needs no answer from you:
+it is never a park and never a question. A tier is never lowered, and never
+escalates twice in a run.
+
 Append: `plan complete → <path> (<n> tasks)`.
 
 ### `sdd`
@@ -424,7 +460,8 @@ node "$AP/scripts/autopilot-dispatch.mjs" sdd \
   --run=<run> \
   --config=.claude/autopilot.json \
   --worktree=<worktree path> \
-  --plan-path=<path-to-plan>
+  --plan-path=<path-to-plan> \
+  --tasks=<n>
 ```
 
 Dispatch by the printed path.
@@ -442,6 +479,14 @@ The verification contract reduces transcript noise; it does not eliminate it.
 SDD's own nested dispatches still render their tool calls.
 
 SDD reporting BLOCKED is not answered from config. It parks.
+
+`--tasks` is `<n>` from the `plan complete → <path> (<n> tasks)` ledger entry —
+the count the plan actually wrote, not the tier the brainstorm declared. At
+exactly 1 the composed definition instructs SDD to run one whole-branch
+`final_review` and skip the per-task `task_review` dispatch, because at one
+task the two reviewers read the same diff. At 2 or more, and when the flag is
+omitted, the dispatch is today's two-stage review. An escalated run therefore
+needs no extra plumbing: it has 2 or more tasks and gets both reviews.
 
 Append: `sdd complete (<n> tasks, <k> parked, <f> fix rounds across <t> tasks)`
 — for example `sdd complete (10 tasks, 0 parked, 7 fix rounds across 4 tasks)`.

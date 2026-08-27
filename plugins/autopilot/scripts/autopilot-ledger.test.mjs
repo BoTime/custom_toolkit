@@ -270,3 +270,60 @@ Total run duration: **0s** (excludes preflight — the ledger starts at \`starte
     );
   });
 });
+
+describe("tier entries in the ledger", () => {
+  const HEADER = "# autopilot run — task: add a CSV export button";
+  const build = (...texts) =>
+    [HEADER, ...texts.map((t, i) => `2026-08-26T14:${String(i).padStart(2, "0")}:00Z  ${t}`)]
+      .join("\n");
+
+  it("parses tier entries like any other entry", () => {
+    // AC14
+    const ledger = parseLedger(
+      build("started (phase 1)", "design approved", "tier: small"),
+    );
+    expect(ledger.entries.map((e) => e.text)).toContain("tier: small");
+  });
+
+  it("resolves the same stage with and without the tier entries", () => {
+    // AC14 — a tier entry records what happened; it must not move the run.
+    const withTier = build(
+      "started (phase 1)",
+      "design approved",
+      "tier: small",
+      "worktree: .claude/worktrees/x (branch x)",
+      "spec committed → docs/superpowers/specs/x-design.md",
+      "tier escalated: small → standard — the config block and the dispatch wiring cannot be reviewed as one diff",
+      "plan complete → docs/superpowers/plans/x.md (2 tasks)",
+    );
+    const without = build(
+      "started (phase 1)",
+      "design approved",
+      "worktree: .claude/worktrees/x (branch x)",
+      "spec committed → docs/superpowers/specs/x-design.md",
+      "plan complete → docs/superpowers/plans/x.md (2 tasks)",
+    );
+    expect(nextStage(parseLedger(withTier))).toBe(nextStage(parseLedger(without)));
+    expect(nextStage(parseLedger(withTier))).toBe("sdd");
+  });
+
+  it("leaves a parked run parked when a tier entry lands after the PARKED line", () => {
+    // AC15. nextStage detects a park by reading the LAST entry, so any entry
+    // appended after a park would unpark the run. PR #33 hit exactly this
+    // with its `session:` entries.
+    for (const trailing of ["tier: small", "tier escalated: small → standard — reason"]) {
+      const ledger = build(
+        "started (phase 1)",
+        "design approved",
+        "PARKED (spec): the acceptance criteria contradict the design",
+        trailing,
+      );
+      expect(nextStage(parseLedger(ledger))).toBe("parked");
+    }
+  });
+
+  it("still parks on a bare PARKED line with nothing after it", () => {
+    const ledger = build("started (phase 1)", "PARKED (setup): no origin remote");
+    expect(nextStage(parseLedger(ledger))).toBe("parked");
+  });
+});

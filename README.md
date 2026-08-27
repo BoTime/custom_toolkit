@@ -67,6 +67,48 @@ catches semantic conflicts (task A renames a function, task B adds a caller of
 the old name, git reports nothing, the branch is broken). Unset, preflight
 warns and the `land` stage parks rather than reporting green.
 
+#### Ceremony tiers
+
+Phase 1 classifies the work into one of three tiers, and states it in the same
+message as the approaches so you can override it there. A tier binds one
+thing: **how far the `plan` stage may decompose the work**, and — at a single
+task — whether the run needs two reviews or one.
+
+| Tier | The work is | Plan ceiling | Escalates to |
+|---|---|---|---|
+| `small` | confined to one module, satisfying one acceptance criterion | 1 task | `standard`, once |
+| `standard` | more than one reviewable diff, not spanning separate subsystems | 3 tasks | `large`, once |
+| `large` | genuinely spanning separate subsystems | 5 tasks | — |
+
+**A tier never decides which documents get written.** `spec` and `plan` run on
+every tier without exception. Across this repository's findings corpus, 36 of
+39 review findings — and every major one — were defects in the spec or the
+plan, caught in prose before they became code. The document that catches them
+is not the ceremony worth cutting; decomposition is.
+
+A plan that finds its tier too tight escalates one step on its own, opens with
+an `## Escalation` heading naming the reason, and the run records
+`tier escalated: small → standard — <reason>` in its ledger. It never parks and
+never asks. Each escalation entry is a labelled classifier miss, so the ledgers
+say over time whether Phase 1 is judging complexity well.
+
+Ceilings are tunable, merged per key like `roles`:
+
+```json
+{
+  "tiers": {
+    "small": 1,
+    "standard": 3,
+    "large": 5
+  }
+}
+```
+
+A project that widens `standard` to 4 gets a plan prompt that says 4. Omitting
+the block entirely, or resuming a run whose ledger predates tiering, composes
+the untiered budget of 1–5 tasks with two-stage review — absence resolves
+toward more ceremony, never less.
+
 #### Turning browser verification on
 
 **Writing a `(ui)` acceptance criterion in the spec turns it on.** There is no
