@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   STAGES,
+  RESERVED,
   ROLE_TABLE_ROLES,
   compose,
   roleTable,
@@ -183,7 +184,13 @@ describe("SKILL.md routes every dispatch through the script", () => {
       expected.add("config");
       const passed = new Set(flags);
       expect([...expected].filter((f) => !passed.has(f)), `${stage}: flags not passed`).toEqual([]);
-      expect([...passed].filter((f) => !expected.has(f)), `${stage}: flags that fill nothing`).toEqual([]);
+      // A RESERVED flag selects a fragment or gates one (`--tier`, `--tasks`,
+      // `--worktree`) rather than filling a placeholder in the body, so the
+      // script accepts it. Anything outside both sets still errors at compose.
+      expect(
+        [...passed].filter((f) => !expected.has(f) && !RESERVED.has(f)),
+        `${stage}: flags that fill nothing`,
+      ).toEqual([]);
     }
   });
 });

@@ -42,7 +42,8 @@ You MUST create a task for each of these items and complete them in order:
 2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. This is the only place the developer steers, so keep asking until nothing load-bearing is unresolved.
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation. The developer's pick is the last decision they make.
-5. **State the design and hand back** — in one message: the design as settled by their answers, then control returned to the autopilot orchestrator. No approval gate. Nothing is written to disk and nothing is committed; the design lives in conversation only.
+5. **Classify the ceremony tier** — state it out loud in the same message as the approaches, so the developer's pick and any override arrive together. See the Ceremony Tier section below.
+6. **State the design and hand back** — in one message: the design as settled by their answers, then `tier: <name>`, then control returned to the autopilot orchestrator. No approval gate. Nothing is written to disk and nothing is committed; the design lives in conversation only.
 
 ## Process Flow
 
@@ -52,13 +53,15 @@ digraph brainstorming {
     "Ask clarifying questions" [shape=box];
     "Anything unresolved?" [shape=diamond];
     "Propose 2-3 approaches" [shape=box];
+    "Classify the ceremony tier" [shape=box];
     "State design + hand back to autopilot" [shape=doublecircle];
 
     "Explore project context" -> "Ask clarifying questions";
     "Ask clarifying questions" -> "Anything unresolved?";
     "Anything unresolved?" -> "Ask clarifying questions" [label="yes, ask another"];
     "Anything unresolved?" -> "Propose 2-3 approaches" [label="no"];
-    "Propose 2-3 approaches" -> "State design + hand back to autopilot" [label="developer picks"];
+    "Propose 2-3 approaches" -> "Classify the ceremony tier" [label="developer picks"];
+    "Classify the ceremony tier" -> "State design + hand back to autopilot";
 }
 ```
 
@@ -113,6 +116,41 @@ presenting a design for sign-off.
 - Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
 - Don't propose unrelated refactoring. Stay focused on what serves the current goal.
 
+## Ceremony Tier
+
+Autopilot scales one thing to the size of the work: how far the `plan` stage
+may decompose it, and — at a single task — whether the run needs two reviews or
+one. It does not scale which documents get written. `spec` and `plan` run on
+every tier without exception, because the measured defects in this repository
+are overwhelmingly in exactly those documents.
+
+Classify the settled design into one of three tiers:
+
+| Tier | The work is | Plan ceiling |
+|---|---|---|
+| `small` | confined to one module, satisfying one acceptance criterion | 1 task |
+| `standard` | more than one reviewable diff, but not spanning separate subsystems | 3 tasks |
+| `large` | genuinely spanning separate subsystems | 5 tasks |
+
+Ceilings are the shipped defaults; a project may tune them in
+`.claude/autopilot.json`. Classify by the shape of the work, not by the number.
+
+**State the tier in the same message as the approaches**, in one line — for
+example, "I'd classify this `small`: it's one function and its caller."
+Stating it there is what gives the developer a place to override it, since they
+are replying to that message anyway.
+
+**This is not a gate.** Do not ask whether the tier is right, do not wait for
+confirmation, and do not re-state it as a question later. If they say nothing
+about it, the tier stands.
+
+**Classify once.** If a later answer genuinely changes the shape of the work,
+restate the tier in the design statement — but never as a second question.
+
+A misclassification is cheap and recoverable: the `plan` stage may escalate one
+step on its own (`small` → `standard`, `standard` → `large`) and says so in the
+ledger. Prefer the smaller tier when the two are close.
+
 ## After the Design
 
 **Hand back to autopilot — the only step:**
@@ -122,6 +160,11 @@ presenting a design for sign-off.
   approval, do NOT summarize it back for confirmation, and do NOT ask "shall I
   start?" or any other proceed-check. Phase 2 begins the instant the brainstorm
   returns, and running `/autopilot` was the developer's authorization for that.
+- **End the handoff with the tier on its own line: `tier: small`, `tier:
+  standard`, or `tier: large`.** The orchestrator reads that line, records it
+  in the ledger, and passes it to the `plan` stage. Omitting it is not an
+  error — the run falls back to the untiered budget — but it discards the
+  classification you just made.
 - Do NOT write it to a file. Do NOT commit anything. The design lives in
   conversation only — autopilot's own `spec` stage is what writes it to
   `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commits it, and

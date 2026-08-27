@@ -114,7 +114,7 @@ export const STAGES = {
 };
 
 /** Flags that never fill a placeholder. */
-const RESERVED = new Set(["run", "config", "worktree", "tier", "tasks"]);
+export const RESERVED = new Set(["run", "config", "worktree", "tier", "tasks"]);
 
 const flagFor = (placeholder) => `--${placeholder.replace(/_/g, "-")}`;
 

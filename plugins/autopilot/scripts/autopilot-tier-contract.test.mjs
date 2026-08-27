@@ -7,9 +7,17 @@
 // These assertions compose the real definition from the real files, the way
 // autopilot-dispatch.mjs does, and read the result.
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { compose } from "./autopilot-dispatch.mjs";
 import { composeStage, defaultConfig, dummyValues } from "./dispatch-fixture.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const BRAINSTORM_PATH = join(HERE, "..", "skills", "autopilot-brainstorm", "SKILL.md");
+const ORCHESTRATOR_PATH = join(HERE, "..", "skills", "autopilot", "SKILL.md");
+const README_PATH = join(HERE, "..", "..", "..", "README.md");
 
 const plan = (tier, opts) => composeStage("plan", { extraValues: { tier }, ...opts });
 
@@ -103,5 +111,87 @@ describe("the sdd single-review contract", () => {
   it("is absent from a two-task dispatch", () => {
     expect(composeStage("sdd", { extraValues: { tasks: "2" } }))
       .not.toMatch(/one review, not two/i);
+  });
+});
+
+describe("the brainstorm's classification step", () => {
+  const brainstorm = readFileSync(BRAINSTORM_PATH, "utf8");
+
+  it("names all three tiers", () => {
+    // AC12
+    for (const tier of ["small", "standard", "large"]) {
+      expect(brainstorm).toContain(`\`${tier}\``);
+    }
+  });
+
+  it("makes classification a checklist step, not an aside", () => {
+    // AC12 — the checklist is what the skill says MUST be done in order.
+    expect(brainstorm).toMatch(/\*\*Classify the ceremony tier\*\*/);
+  });
+
+  it("carries the tier in the handoff, in the form the orchestrator reads", () => {
+    expect(brainstorm).toContain("tier: small");
+  });
+
+  it("keeps the classification from becoming an approval gate", () => {
+    // The whole fork exists to have no gate after the questions.
+    expect(brainstorm).toMatch(/This is not a gate/);
+  });
+
+  it("still forbids writing a spec file", () => {
+    // Guards against the classification section being read as a licence to
+    // start producing artifacts during Phase 1.
+    expect(brainstorm).toMatch(/Do NOT write it to a file/);
+  });
+});
+
+describe("the orchestrator's tier handling", () => {
+  const skill = readFileSync(ORCHESTRATOR_PATH, "utf8");
+
+  it("appends the tier entry immediately after design approved", () => {
+    // AC13
+    expect(skill).toMatch(/immediately after `design approved`/);
+    expect(skill).toContain("tier: <small|standard|large>");
+  });
+
+  it("appends a tier escalated entry when the plan reports one", () => {
+    // AC13
+    expect(skill).toContain("tier escalated: small → standard");
+  });
+
+  it("passes the tier to the plan dispatch and the task count to sdd", () => {
+    expect(skill).toContain("--tier=<tier>");
+    expect(skill).toContain("--tasks=<n>");
+  });
+
+  it("omits --tier rather than guessing when the ledger carries no tier", () => {
+    // Absence resolves toward more ceremony, never less.
+    expect(skill).toMatch(/Omit the flag entirely when the ledger has no `tier:` entry/);
+  });
+
+  it("keys review depth to the count the plan wrote, not the declared tier", () => {
+    expect(skill).toMatch(/not the tier the brainstorm declared/);
+  });
+});
+
+describe("the README's tier documentation", () => {
+  const readme = readFileSync(README_PATH, "utf8");
+
+  it("documents the three tiers and their ceilings", () => {
+    // AC16
+    for (const [tier, ceiling] of Object.entries({ small: 1, standard: 3, large: 5 })) {
+      expect(readme).toMatch(new RegExp(`\`${tier}\`.*\\| ${ceiling} tasks? \\|`));
+    }
+  });
+
+  it("states that spec and plan run on every tier", () => {
+    // AC16 — the one thing a reader must not conclude is that a small tier
+    // skips documents.
+    expect(readme).toMatch(/`spec` and `plan` run on\nevery tier/);
+  });
+
+  it("documents the tiers config block", () => {
+    expect(readme).toContain('"tiers": {');
+    expect(readme).toContain('"standard": 3');
   });
 });
