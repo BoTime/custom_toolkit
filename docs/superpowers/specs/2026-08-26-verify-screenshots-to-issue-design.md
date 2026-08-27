@@ -131,10 +131,12 @@ keep loading unchanged.
 <repo>/<run>/round-<n>/<CRITERION_ID>.png
 ```
 
-The round is in the key so a verify fix round never overwrites round 1's
-evidence. That matters precisely in the case a reviewer cares about most: a
-criterion that was red, got a fix round, and went green. Both images survive,
-and the issue thread shows the before and the after as two comments.
+The round is in the key so a verify fix round never overwrites round 1's stored
+objects. That matters precisely in the case a reviewer cares about most: a
+criterion that was red, got a fix round, and went green — both images survive in
+the bucket, each at its own URL. The manifest is not round-scoped: it is written
+to a fixed path, so a round-2 run replaces it, and the single issue comment the
+run posts carries the latest round's images.
 
 ### Manifest shape (`uploads.json`)
 

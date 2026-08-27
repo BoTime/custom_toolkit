@@ -117,9 +117,10 @@ export function readCredentials(envPath, readFile = (p) => readFileSync(p, "utf8
  * `<repo>/<run>/round-<n>/<CRITERION_ID>.png`.
  *
  * The round is in the key so a verify fix round never overwrites round 1's
- * evidence — which matters precisely in the case a reviewer cares about most:
- * a criterion that was red, got a fix round, and went green. Both images
- * survive, and the issue thread shows the before and the after.
+ * stored objects — which matters precisely in the case a reviewer cares about
+ * most: a criterion that was red, got a fix round, and went green. Both images
+ * survive in the bucket, each at its own URL. The manifest beside them is not
+ * round-scoped, so the run's one issue comment carries the latest round's.
  */
 export function objectKey({ repo, run, round, id }) {
   return `${repo}/${run}/round-${round}/${id}.png`;
