@@ -60,8 +60,8 @@ digraph brainstorming {
     "Ask clarifying questions" -> "Anything unresolved?";
     "Anything unresolved?" -> "Ask clarifying questions" [label="yes, ask another"];
     "Anything unresolved?" -> "Propose 2-3 approaches" [label="no"];
-    "Propose 2-3 approaches" -> "Classify the ceremony tier" [label="developer picks"];
-    "Classify the ceremony tier" -> "State design + hand back to autopilot";
+    "Propose 2-3 approaches" -> "Classify the ceremony tier";
+    "Classify the ceremony tier" -> "State design + hand back to autopilot" [label="developer picks"];
 }
 ```
 

@@ -171,8 +171,12 @@ export function tierBudget({ config, tier, fragmentReader }) {
   const ceilingFor = (name) => {
     const ceiling = config?.tiers?.[name];
     if (!Number.isInteger(ceiling) || ceiling < 1) {
+      const problem =
+        ceiling === undefined
+          ? "missing from"
+          : `${JSON.stringify(ceiling)} is not a positive integer in`;
       throw new Error(
-        `tiers.${name}: missing from the merged config — a tier budget cannot default its ceiling`,
+        `tiers.${name}: ${problem} the merged config — a tier budget cannot default its ceiling`,
       );
     }
     return String(ceiling);

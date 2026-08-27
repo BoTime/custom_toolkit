@@ -12,7 +12,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   STAGES,
-  RESERVED,
   ROLE_TABLE_ROLES,
   compose,
   roleTable,
@@ -174,6 +173,14 @@ describe("SKILL.md routes every dispatch through the script", () => {
     expect(all.map((i) => i.stage).filter((s) => !(s in STAGES))).toEqual([]);
   });
 
+  // Beyond run/config/worktree (legitimate for every stage — every stage's
+  // body template has a `{{worktree}}` placeholder, and `run`/`config` are
+  // dispatch-universal), a RESERVED flag gates a fragment rather than filling
+  // a placeholder — and only the stage that reads it may carry it. This must
+  // stay narrow: it is what catches a reserved flag drifting onto a stage
+  // that never gates on it.
+  const GATED_FLAGS = { plan: ["tier"], sdd: ["tasks"] };
+
   it("passes exactly the flags each stage's template consumes", () => {
     // The seam no single file exposes: a flag the template does not consume is
     // a value that never reaches the agent, and the script errors on it — so a
@@ -184,11 +191,9 @@ describe("SKILL.md routes every dispatch through the script", () => {
       expected.add("config");
       const passed = new Set(flags);
       expect([...expected].filter((f) => !passed.has(f)), `${stage}: flags not passed`).toEqual([]);
-      // A RESERVED flag selects a fragment or gates one (`--tier`, `--tasks`,
-      // `--worktree`) rather than filling a placeholder in the body, so the
-      // script accepts it. Anything outside both sets still errors at compose.
+      const stageMayCarry = (f) => expected.has(f) || (GATED_FLAGS[stage] ?? []).includes(f);
       expect(
-        [...passed].filter((f) => !expected.has(f) && !RESERVED.has(f)),
+        [...passed].filter((f) => !stageMayCarry(f)),
         `${stage}: flags that fill nothing`,
       ).toEqual([]);
     }
