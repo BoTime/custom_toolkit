@@ -114,6 +114,70 @@ brainstorm hands the design back. That entry keeps its name — `nextStage`
 matches on it to resume at `setup` — and records the design settling, not a
 separate approval step.
 
+### Capture the clarifying questions
+
+Every clarifying question the brainstorm asked marks context the pipeline
+could not find on its own — in the task description, in the repo, in
+`CLAUDE.md`, or in config. Capture the whole set **once, in a single batch, at
+the handoff**, never one question at a time: the interactive phase stays as
+fast as it is today, and the trade — a brainstorm interrupted before the
+handoff records nothing — is deliberate.
+
+Write the batch with a quoted heredoc, then capture it. Capture appends one
+line per element to `.superpowers/autopilot/<run>/questions.jsonl` in the
+**main checkout**, beside `run.md`:
+
+```bash
+cat > /tmp/autopilot-questions.json <<'JSON'
+[
+  {
+    "seq": 1,
+    "question": "<the clarifying question, as asked>",
+    "answer": "<the answer your human partner gave>",
+    "answer_source": "repo",
+    "pattern": "<short canonical phrase>"
+  }
+]
+JSON
+node "$AP/scripts/autopilot-questions.mjs" capture \
+  --run-dir=.superpowers/autopilot/<run> \
+  --questions=@/tmp/autopilot-questions.json
+```
+
+`seq` is 1-based within the run and records the order asked. `answer_source`
+names where the answer **should have lived** — not what the question was
+about:
+
+| Value | Meaning |
+|---|---|
+| `task` | The issue or task description could have stated it |
+| `repo` | Discoverable by reading code, docs, or tests already present |
+| `claude_md` | A project convention that belongs in `CLAUDE.md` |
+| `config` | A key in `.claude/autopilot.json` |
+| `judgment` | Genuine human preference; no artifact could have supplied it |
+
+Record the `judgment` questions too. A recurring judgment question is never a
+defect and is never proposed as something to fix, but without it the corpus
+has no denominator: a run that asked two answerable questions would look
+identical to one that asked two answerable and twenty judgment calls.
+
+`pattern` is the clustering key and clustering is a pure lexical match, so
+reuse the same short phrase verbatim across runs when the gap is the same
+kind, and leave the specifics to `question` and `answer`. A phrase reworded
+per question clusters with nothing.
+
+Validation is all-or-nothing: on any bad element the script writes nothing and
+exits non-zero, naming the offending index and field.
+
+**Capture before appending `design approved`.** That entry is what a resume
+matches to jump straight to `setup`, so a run that captured after it would
+re-capture the same batch on every resume.
+
+**A capture failure never parks.** Append
+`questions capture failed — <reason>` and continue the run, the way a
+`learnings` failure is logged and passed over. The run's product is the pull
+request; a missing question log is a reporting defect.
+
 **The brainstorm's handoff ends Phase 1.** Append `design approved` and go
 straight into `setup` in the same turn. Do not re-present the design, do not
 summarize it back for confirmation, and do not ask whether to proceed. The
