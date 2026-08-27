@@ -1,6 +1,6 @@
 // autopilot-github's SKILL.md is a wrapper made of prose. Nothing else in the
 // repository fails when it drifts: it can lose the "do not dispatch autopilot
-// into a subagent" rule, or the park hook's ordering, or one of the five ledger
+// into a subagent" rule, or the park hook's ordering, or one of the six ledger
 // lines, and every test still passes while the wrapper quietly stops working —
 // a card left in Ready, or worse, a parked run that /autopilot resume drives
 // straight past.
@@ -75,11 +75,45 @@ describe("the learnings stage rides the wrapped pipeline", () => {
   });
 });
 
-describe("the five github: ledger lines", () => {
+describe("the six github: ledger lines", () => {
   GITHUB_LEDGER_LINES.forEach((line) => {
     it(`documents "${line}"`, () => {
       expect(skill).toContain(line);
     });
+  });
+});
+
+describe("Delta 3d — the verify screenshots hook", () => {
+  const from = skill.indexOf("### Delta 3d");
+  const rest = skill.slice(from);
+  const end = rest.indexOf("\n### ", 1);
+  const delta = unwrap(end === -1 ? rest : rest.slice(0, end));
+
+  it("exists at all", () => {
+    expect(from).toBeGreaterThan(-1);
+  });
+
+  it("anchors immediately after the verify stage's ledger entry", () => {
+    expect(delta).toContain("immediately after the `verify` stage's ledger entry");
+  });
+
+  it("guards itself with its own ledger line", () => {
+    expect(delta).toContain("github: verify screenshots posted");
+  });
+
+  it("reads the manifest the verify stage writes", () => {
+    expect(delta).toContain("uploads.json");
+  });
+
+  // Same failure Delta 3c exists to prevent: a line appended after PARKED
+  // makes a parked run read as resumable, and /autopilot resume drives it
+  // straight past the park.
+  it("posts and appends BEFORE the PARKED entry", () => {
+    expect(delta).toMatch(/before[^.]{0,120}PARKED/i);
+  });
+
+  it("appends no ledger line when there is nothing to post", () => {
+    expect(delta).toMatch(/append \*{0,2}nothing\*{0,2}/i);
   });
 });
 
@@ -118,8 +152,8 @@ describe("the load-bearing rules", () => {
     expect(flat).toMatch(/status names/i);
   });
 
-  it("names all four subcommands of the script", () => {
-    for (const subcommand of ["preflight", "resolve", "move", "comment"]) {
+  it("names all five subcommands of the script", () => {
+    for (const subcommand of ["preflight", "resolve", "move", "comment", "screenshots"]) {
       expect(skill).toContain(`autopilot-github-issue.mjs ${subcommand}`);
     }
   });

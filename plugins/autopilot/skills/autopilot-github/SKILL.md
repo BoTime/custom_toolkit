@@ -237,6 +237,7 @@ different string points at a different directory and loses the run. Take it from
 node "$AP"/scripts/autopilot-github-issue.mjs move --issue <n> --to "<option>"
 node "$AP"/scripts/autopilot-github-issue.mjs comment --issue <n> --body "<text>"
 node "$AP"/scripts/autopilot-github-issue.mjs comment --issue <n> --body-file <path>
+node "$AP"/scripts/autopilot-github-issue.mjs screenshots --issue <n> --manifest <path>
 ```
 
 Use these. Do not write raw `gh project` invocations yourself — the script owns
@@ -263,11 +264,12 @@ entry carries an ISO timestamp and is visible to `parseLedger`:
 node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/<run>/run.md','<entry text>'))" "$AP"
 ```
 
-The five lines, in pipeline order:
+The six lines, in pipeline order:
 
 ```
 github: moved to in-progress
 github: start comment posted
+github: verify screenshots posted
 github: moved to in-review
 github: pr comment posted
 github: parked comment posted
@@ -324,6 +326,43 @@ This ordering is load-bearing and is pinned by a test. `nextStage` returns
 make a parked run look resumable, and `/autopilot resume` would drive it
 straight past the park — precisely the failure autopilot's parking section
 warns about.
+
+### Delta 3d — verify screenshots hook
+
+Anchor: **immediately after the `verify` stage's ledger entry** — and, when
+verify is red after its one fix round, immediately **before** the
+`PARKED — <reason>` entry, for exactly the reason Delta 3c gives.
+
+```bash
+node "$AP"/scripts/autopilot-github-issue.mjs screenshots \
+  --issue <n> \
+  --manifest .superpowers/autopilot/<run>/verify/artifacts/uploads.json
+```
+
+The `verify` stage writes that manifest only when the project configures an
+`artifacts` block and every upload succeeded, so the command has two outcomes
+and they are not the same:
+
+1. It prints `posted <n> screenshots to issue #<n>` — append
+   `github: verify screenshots posted`.
+2. It prints `skipped — no screenshot manifest at <path>` — append **nothing**
+   and continue. A repository with no `artifacts` block must reach exactly the
+   ledger it reached before this hook existed.
+
+The ledger line is the idempotency guard: re-read the ledger first and skip the
+step when `github: verify screenshots posted` is already present, the same way
+every other hook does.
+
+The park case is where these images are worth the most — a human is about to be
+asked what went wrong, and the pictures are the answer — so the hook runs there
+too, and the ordering is the same one Delta 3c fixes: post, append the
+`github: ` line, then append `PARKED — <reason>` **last**. `PARKED` must remain
+the ledger's final entry, or `nextStage` stops returning `parked` and
+`/autopilot resume` drives the run straight past the park.
+
+An r2.dev public development URL is world-readable. Anything visible in a
+verified screenshot is public to anyone with the link, which is why the comment
+the script writes says so too.
 
 ### Transition failures do not park
 
