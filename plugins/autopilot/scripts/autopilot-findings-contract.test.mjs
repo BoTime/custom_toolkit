@@ -128,6 +128,10 @@ describe("run directory placement", () => {
 });
 
 describe("plugin packaging", () => {
+  const marketplaceJson = JSON.parse(
+    readFileSync(join(HERE, "..", "..", "..", ".agents", "plugins", "marketplace.json"), "utf8"),
+  );
+
   const pluginJson = JSON.parse(
     readFileSync(join(HERE, "..", ".claude-plugin", "plugin.json"), "utf8"),
   );
@@ -149,6 +153,21 @@ describe("plugin packaging", () => {
         displayName: "Autopilot",
         category: "Productivity",
       },
+    });
+  });
+
+  it("registers autopilot in the local marketplace with the install path Codex uses", () => {
+    expect(marketplaceJson.plugins).toContainEqual({
+      name: "autopilot",
+      source: {
+        source: "local",
+        path: "./plugins/autopilot",
+      },
+      policy: {
+        installation: "AVAILABLE",
+        authentication: "ON_INSTALL",
+      },
+      category: "Productivity",
     });
   });
 
