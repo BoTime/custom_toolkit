@@ -85,23 +85,30 @@ export const uiCriteria = (criteria) => criteria.filter((c) => c.kind === "ui");
 /**
  * Flatten Playwright's JSON report into a verdict.
  *
- * Only the outcome and the first error message per failing test are kept.
- * The full report stays on disk: the verify agent is under a contract not to
- * read it, and this is what makes that contract followable.
+ * The outcome, the first error message per failing test, and the local path of
+ * that spec's screenshot are kept. The full report stays on disk: the verify
+ * agent is under a contract not to read it, and this is what makes that
+ * contract followable — a path is not an image, and nothing here reads one.
+ *
+ * `attachments` is singular-valued despite its plural name. The name is fixed
+ * by the design spec; the value is one path or null, because a spec produces at
+ * most one screenshot and the trace beside it is deliberately not published.
  */
 export function summarize(report) {
   const results = [];
   const walk = (suite) => {
     for (const spec of suite.specs ?? []) {
       const failed = (spec.tests ?? []).some((t) => t.status !== "expected");
-      const message = (spec.tests ?? [])
-        .flatMap((t) => t.results ?? [])
-        .map((r) => r.error?.message)
-        .find(Boolean);
+      const runs = (spec.tests ?? []).flatMap((t) => t.results ?? []);
+      const message = runs.map((r) => r.error?.message).find(Boolean);
+      const shot = runs
+        .flatMap((r) => r.attachments ?? [])
+        .find((a) => a?.contentType === "image/png" && a?.path);
       results.push({
         title: spec.title,
         ok: !failed,
         message: failed ? (message ?? "failed with no error message").split("\n")[0] : null,
+        attachments: shot?.path ?? null,
       });
     }
     for (const child of suite.suites ?? []) walk(child);
@@ -129,8 +136,15 @@ export function summarize(report) {
 export function attribute(criteria, summary) {
   return uiCriteria(criteria).map((c) => {
     const match = summary.results.find((r) => r.title.toUpperCase().startsWith(c.id));
-    if (!match) return { ...c, status: "missing", message: "no test covered this criterion" };
-    return { ...c, status: match.ok ? "pass" : "fail", message: match.message };
+    if (!match) {
+      return { ...c, status: "missing", message: "no test covered this criterion", screenshot: null };
+    }
+    return {
+      ...c,
+      status: match.ok ? "pass" : "fail",
+      message: match.message,
+      screenshot: match.attachments ?? null,
+    };
   });
 }
 
@@ -197,7 +211,7 @@ module.exports = {
   use: {
     baseURL: ${JSON.stringify(baseURL)},
     headless: true,
-    screenshot: "only-on-failure",
+    screenshot: "on",
     trace: "retain-on-failure",
     video: "off",
   },

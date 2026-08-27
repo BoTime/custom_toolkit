@@ -92,6 +92,22 @@ const failing = (title, message) => ({
   tests: [{ status: "unexpected", results: [{ error: { message } }] }],
 });
 
+// Playwright records one attachment per artifact on each test result. Only the
+// image/png one is a screenshot; a trace attachment sits in the same array.
+const withShot = (spec, path) => ({
+  ...spec,
+  tests: spec.tests.map((t) => ({
+    ...t,
+    results: t.results.map((r) => ({
+      ...r,
+      attachments: [
+        { name: "trace", contentType: "application/zip", path: "/run/trace.zip" },
+        { name: "screenshot", contentType: "image/png", path },
+      ],
+    })),
+  })),
+});
+
 describe("summarize", () => {
   it("counts passes and failures across nested suites", () => {
     const nested = {
@@ -119,6 +135,23 @@ describe("summarize", () => {
   it("returns zeroes for an empty report", () => {
     expect(summarize({})).toMatchObject({ total: 0, passed: 0, failed: 0 });
   });
+
+  it("carries the local path of the image/png attachment onto the result", () => {
+    const s = summarize(report([withShot(passing("AC1 login"), "/run/a/AC1.png")]));
+    expect(s.results[0].attachments).toBe("/run/a/AC1.png");
+  });
+
+  it("ignores a non-image attachment rather than mistaking it for a screenshot", () => {
+    const spec = passing("AC1 login");
+    spec.tests[0].results[0].attachments = [
+      { name: "trace", contentType: "application/zip", path: "/run/trace.zip" },
+    ];
+    expect(summarize(report([spec])).results[0].attachments).toBeNull();
+  });
+
+  it("returns a null path for a spec with no attachments at all", () => {
+    expect(summarize(report([passing("AC1 login")])).results[0].attachments).toBeNull();
+  });
 });
 
 describe("attribute", () => {
@@ -145,6 +178,22 @@ describe("attribute", () => {
   it("carries the failure message onto the criterion", () => {
     const rows = attribute(criteria, summarize(report([passing("AC1 x"), failing("AC3 y", "nope")])));
     expect(rows.find((r) => r.id === "AC3")).toMatchObject({ status: "fail", message: "nope" });
+  });
+
+  it("threads the screenshot path onto the criterion it matched", () => {
+    const rows = attribute(
+      criteria,
+      summarize(report([withShot(passing("AC1 login"), "/run/a/AC1.png")])),
+    );
+    expect(rows.find((r) => r.id === "AC1").screenshot).toBe("/run/a/AC1.png");
+  });
+
+  it("leaves a criterion with no test missing and with no path", () => {
+    const rows = attribute(criteria, summarize(report([passing("AC1 login")])));
+    expect(rows.find((r) => r.id === "AC3")).toMatchObject({
+      status: "missing",
+      screenshot: null,
+    });
   });
 });
 
@@ -217,8 +266,10 @@ describe("playwrightConfig", () => {
     expect(cfg).toContain("/run/verify/artifacts/results.json");
   });
 
-  it("captures screenshots and traces only on failure", () => {
-    expect(cfg).toContain('screenshot: "only-on-failure"');
+  // A passing criterion is the case a reviewer most wants to see, and
+  // "only-on-failure" produced no image for it at all.
+  it("captures a screenshot on every test, and keeps traces failure-only", () => {
+    expect(cfg).toContain('screenshot: "on"');
     expect(cfg).toContain('trace: "retain-on-failure"');
     expect(cfg).toContain('video: "off"');
   });
