@@ -105,6 +105,11 @@ export const TARGETS = [
     anchor: null,
   },
   {
+    file: "plugins/autopilot/.codex-plugin/plugin.json",
+    field: "version",
+    anchor: null,
+  },
+  {
     file: "package-lock.json",
     field: "version",
     // The first "version" in the lockfile is the top-level one.
