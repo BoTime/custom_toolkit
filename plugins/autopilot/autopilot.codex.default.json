@@ -1,16 +1,16 @@
 {
   "roles": {
-    "brainstorm":        { "model": "gpt-5.6", "effort": "high" },
-    "spec":              { "model": "gpt-5.6", "effort": "high" },
-    "plan":              { "model": "gpt-5.6", "effort": "high" },
-    "learnings":         { "model": "gpt-5.6", "effort": "high" },
-    "verify":            { "model": "gpt-5.4", "effort": "high" },
-    "implement":         { "model": "gpt-5.4", "effort": "medium" },
-    "implement_complex": { "model": "gpt-5.6", "effort": "high" },
-    "task_review":       { "model": "gpt-5.4", "effort": "medium" },
-    "re_review":         { "model": "gpt-5.4", "effort": "medium" },
-    "final_review":      { "model": "gpt-5.6", "effort": "high" },
-    "fix_escalation":    { "model": "gpt-5.6", "effort": "high" }
+    "brainstorm":        { "model": "gpt-5.6-sol", "effort": "high" },
+    "spec":              { "model": "gpt-5.6-sol", "effort": "high" },
+    "plan":              { "model": "gpt-5.6-sol", "effort": "high" },
+    "learnings":         { "model": "gpt-5.6-sol", "effort": "high" },
+    "verify":            { "model": "gpt-5.6-terra", "effort": "high" },
+    "implement":         { "model": "gpt-5.6-terra", "effort": "medium" },
+    "implement_complex": { "model": "gpt-5.6-sol", "effort": "high" },
+    "task_review":       { "model": "gpt-5.6-terra", "effort": "medium" },
+    "re_review":         { "model": "gpt-5.6-terra", "effort": "medium" },
+    "final_review":      { "model": "gpt-5.6-sol", "effort": "high" },
+    "fix_escalation":    { "model": "gpt-5.6-sol", "effort": "high" }
   },
   "worktree_dir": ".claude/worktrees",
   "base_ref": "origin/main",

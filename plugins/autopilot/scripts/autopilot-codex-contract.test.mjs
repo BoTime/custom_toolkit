@@ -34,7 +34,7 @@ const visualCompanion = readSkill(
 function config() {
   return {
     roles: {
-      implement: { model: "gpt-5.6", effort: "high" },
+      implement: { model: "gpt-5.6-sol", effort: "high" },
     },
   };
 }
