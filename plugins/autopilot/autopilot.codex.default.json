@@ -1,0 +1,31 @@
+{
+  "roles": {
+    "brainstorm":        { "model": "gpt-5.6", "effort": "high" },
+    "spec":              { "model": "gpt-5.6", "effort": "high" },
+    "plan":              { "model": "gpt-5.6", "effort": "high" },
+    "learnings":         { "model": "gpt-5.6", "effort": "high" },
+    "verify":            { "model": "gpt-5.4", "effort": "high" },
+    "implement":         { "model": "gpt-5.4", "effort": "medium" },
+    "implement_complex": { "model": "gpt-5.6", "effort": "high" },
+    "task_review":       { "model": "gpt-5.4", "effort": "medium" },
+    "re_review":         { "model": "gpt-5.4", "effort": "medium" },
+    "final_review":      { "model": "gpt-5.6", "effort": "high" },
+    "fix_escalation":    { "model": "gpt-5.6", "effort": "high" }
+  },
+  "worktree_dir": ".claude/worktrees",
+  "base_ref": "origin/main",
+  "reaper": true,
+  "findings_threshold": 2,
+  "browser": {
+    "ready_timeout_ms": 120000
+  },
+  "minimalism": {
+    "mode": "off"
+  },
+  "github": {
+    "status_field": "Status",
+    "status_ready": "Ready",
+    "status_in_progress": "In Progress",
+    "status_in_review": "In Review"
+  }
+}

@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TIERS, loadConfig } from "./autopilot-config.mjs";
+import { assertHost, hostConfigPath } from "./autopilot-host.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -114,7 +115,7 @@ export const STAGES = {
 };
 
 /** Flags that never fill a placeholder. */
-export const RESERVED = new Set(["run", "config", "worktree", "tier", "tasks"]);
+export const RESERVED = new Set(["run", "config", "host", "worktree", "tier", "tasks"]);
 
 const flagFor = (placeholder) => `--${placeholder.replace(/_/g, "-")}`;
 
@@ -244,15 +245,11 @@ export function readFragment(rel) {
 export const outputPath = (run, stage) =>
   `.superpowers/autopilot/${run}/agents/${stage}.md`;
 
-/**
- * Build a stage's subagent definition. Pure: no writes, no process.exit.
- *
- * Order is frontmatter, then the rendered body, then each fragment in the
- * stage's declared order, separated by a blank line. Order is part of the
- * contract: `sdd-minimalism-lite.md` before `sdd-minimalism-full.md` is a
- * ladder, not a set.
- */
-export function compose({
+/** `.superpowers/autopilot/<run>/agents/<stage>.json` — keyed by stage. */
+export const codexOutputPath = (run, stage) =>
+  `.superpowers/autopilot/${run}/agents/${stage}.json`;
+
+function composeInstructions({
   stage,
   config,
   values,
@@ -295,6 +292,33 @@ export function compose({
     );
   }
 
+  const parts = [render(template, values)];
+  for (const fragment of entry.fragments({ config, worktreeHas, values, fragmentReader })) {
+    parts.push(typeof fragment === "string" ? fragmentReader(fragment) : fragment.text);
+  }
+  const instructions = `${parts.map((p) => p.replace(/\s+$/, "")).join("\n\n")}\n`;
+  return { entry, role, instructions };
+}
+
+/**
+ * Build a stage's subagent definition. Pure: no writes, no process.exit.
+ *
+ * Order is frontmatter, then the rendered body, then each fragment in the
+ * stage's declared order, separated by a blank line. Order is part of the
+ * contract: `sdd-minimalism-lite.md` before `sdd-minimalism-full.md` is a
+ * ladder, not a set.
+ */
+export function compose({
+  stage,
+  config,
+  values,
+  fragmentReader = readFragment,
+  worktreeHas = () => false,
+}) {
+  const { entry, role, instructions } = composeInstructions({
+    stage, config, values, fragmentReader, worktreeHas,
+  });
+
   const frontmatter = [
     "---",
     `name: autopilot-${entry.role}`,
@@ -304,11 +328,26 @@ export function compose({
     "---",
   ].join("\n");
 
-  const parts = [frontmatter, render(template, values)];
-  for (const fragment of entry.fragments({ config, worktreeHas, values, fragmentReader })) {
-    parts.push(typeof fragment === "string" ? fragmentReader(fragment) : fragment.text);
-  }
-  return `${parts.map((p) => p.replace(/\s+$/, "")).join("\n\n")}\n`;
+  return `${frontmatter}\n\n${instructions}`;
+}
+
+/** Build the structured stage record consumed by Codex dispatch. Pure. */
+export function composeCodexDispatch({
+  stage,
+  config,
+  values,
+  fragmentReader = readFragment,
+  worktreeHas = () => false,
+}) {
+  const { entry, role, instructions } = composeInstructions({
+    stage, config, values, fragmentReader, worktreeHas,
+  });
+  return {
+    role: entry.role,
+    model: role.model,
+    reasoning_effort: role.effort,
+    instructions,
+  };
 }
 
 /**
@@ -363,15 +402,27 @@ export function main(argv = process.argv.slice(2), io = {}) {
     const values = parseFlags(rest, readFile);
     if (!values.run) throw new Error("--run=<run> is required — it names the run directory");
 
-    const configPath = values.config ?? ".claude/autopilot.json";
-    const { config, warnings } = loadConfig(configPath, env, readFile);
+    const host = values.host ?? "claude";
+    assertHost(host);
+
+    const configPath = values.config ?? hostConfigPath(host);
+    const { config, warnings } = loadConfig(
+      configPath, env, readFile, undefined, { host },
+    );
     for (const warning of warnings) err(`warning: ${warning}`);
 
     const worktree = values.worktree;
     const worktreeHas = (rel) => Boolean(worktree) && exists(join(worktree, rel));
 
-    const text = compose({ stage, config, values, fragmentReader, worktreeHas });
-    const path = outputPath(values.run, stage);
+    const codex = host === "codex";
+    const text = codex
+      ? `${JSON.stringify(composeCodexDispatch({
+        stage, config, values, fragmentReader, worktreeHas,
+      }), null, 2)}\n`
+      : compose({ stage, config, values, fragmentReader, worktreeHas });
+    const path = codex
+      ? codexOutputPath(values.run, stage)
+      : outputPath(values.run, stage);
     writeOut(path, text);
     log(path);
     return 0;

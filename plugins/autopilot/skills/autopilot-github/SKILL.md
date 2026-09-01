@@ -30,11 +30,13 @@ findings become `docs/autopilot/learnings.md` with no wrapper hook involved.
 
 Two structural rules make that work.
 
-1. **Invoke `autopilot:autopilot` in this session, with the Skill tool, and
-   follow it directly. Do not dispatch autopilot into a subagent.** The deltas
-   below interleave with autopilot's own stages and read and write the same
-   ledger. Behind a subagent boundary the hooks would be unreachable, and a park
-   would be reported to you instead of to your human partner.
+1. **Invoke `autopilot:autopilot` in this session with the active host's skill
+   mechanism, and follow it directly. Do not dispatch autopilot into a
+   subagent.** The deltas below interleave with autopilot's own stages and read
+   and write the same ledger. Behind a subagent boundary the hooks would be
+   unreachable, and a park would be reported to you instead of to your human
+   partner. This delegates through the host-aware autopilot flow, including its
+   Codex JSON-record and `spawn_agent` protocol.
 2. **Never touch autopilot's pattern-matched seams.** `nextStage` resumes a run
    by prefix-matching ledger text — `pr:`, `rebase clean`, `learnings committed`,
    `verify`, `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
@@ -49,7 +51,7 @@ Identical to autopilot's own "Locating the plugin's scripts" section, with one
 difference: this skill's base directory is `<plugin root>/skills/autopilot-github`,
 so the plugin root is that path with `/skills/autopilot-github` removed.
 
-`$CLAUDE_PLUGIN_ROOT` is **not** set in Bash tool calls. Resolve the path once
+Do not rely on a plugin-root environment variable in Bash tool calls. Resolve the path once
 and substitute the literal value into every `"$AP"/...` command below — you
 write each command fresh, and shell variables do not persist between Bash calls.
 
@@ -58,22 +60,26 @@ AP="<the base directory, minus /skills/autopilot-github>"
 ls "$AP"/scripts/autopilot-github-issue.mjs   # must exist; if not, stop
 ```
 
-Run every command below from the **repository root**, so the relative
-`.claude/autopilot.json` and `.superpowers/autopilot/...` paths resolve.
+Run every command below from the **repository root**, so the relative selected
+config path and `.superpowers/autopilot/...` paths resolve. Autopilot preflight
+selects `<host>` and `<config>`: Claude uses `.claude/autopilot.json`; Codex
+uses `.codex/autopilot.json`. Keep that same pair throughout this wrapper.
 
 ## Delta 0 — preflight
 
-Run autopilot's own preflight first, exactly as it prescribes. Then, before
-asking your human partner anything:
+Run autopilot's own preflight first, exactly as it prescribes, and retain its
+selected `<host>` / `<config>` pair. Then, before asking your human partner
+anything:
 
 ```bash
-node "$AP"/scripts/autopilot-github-issue.mjs preflight
+node "$AP"/scripts/autopilot-github-issue.mjs preflight --config=<config>
 ```
 
 This is a **hard requirement**, at the same tier as autopilot's "skills resolve"
 check. A non-zero exit prints exactly which `github` keys are missing. Report
 those key names and **stop** — do not start the brainstorm. The fix is a
-`github` block in the project's `.claude/autopilot.json`:
+`github` block in the project's selected `<config>` file (for Codex,
+`.codex/autopilot.json`):
 
 ```json
 "github": {
@@ -99,7 +105,7 @@ defaults, overridden per key by anything the project sets. Read them off this
 line rather than assuming the defaults, or a project that renames one status
 gets a `move` that fails on an option name its board does not have.
 
-The four status keys have defaults in the plugin's `autopilot.default.json` and
+The four status keys have defaults in the selected host's shipped defaults and
 merge per key, so a project usually needs only `project_owner` and
 `project_number`. Those two have no default: they are irreducibly
 project-specific, and a guessed value fails confusingly.
@@ -222,8 +228,8 @@ The value is **computed once, at resolution** — before Phase 1 begins, which i
 what lets the start hook name it — and **declared at `setup`** as the
 worktree/branch name passed to `superpowers:using-git-worktrees`, in place of a
 name falling out of the brainstorm. Everything downstream threads it exactly as
-autopilot already does: the ledger directory, the generated agent definitions
-under `.superpowers/autopilot/<run>/agents/`, the PR branch.
+autopilot already does: the ledger directory, the generated host-native stage
+artifacts under `.superpowers/autopilot/<run>/agents/`, the PR branch.
 
 **Never re-derive the slug by hand.** It is the ledger directory's key: a
 different string points at a different directory and loses the run. Take it from
@@ -234,7 +240,7 @@ different string points at a different directory and loses the run. Take it from
 ### The commands
 
 ```bash
-node "$AP"/scripts/autopilot-github-issue.mjs move --issue <n> --to "<option>"
+node "$AP"/scripts/autopilot-github-issue.mjs move --config=<config> --issue <n> --to "<option>"
 node "$AP"/scripts/autopilot-github-issue.mjs comment --issue <n> --body "<text>"
 node "$AP"/scripts/autopilot-github-issue.mjs comment --issue <n> --body-file <path>
 node "$AP"/scripts/autopilot-github-issue.mjs screenshots --issue <n> --manifest <path>
@@ -288,7 +294,7 @@ of redoing the move or skipping the comment.
 
 Anchor: **immediately after `started (phase 1)` is appended.**
 
-1. `move --issue <n> --to "<status_in_progress>"` (from Ready). Append
+1. `move --config=<config> --issue <n> --to "<status_in_progress>"` (from Ready). Append
    `github: moved to in-progress`.
 2. `comment --issue <n>` saying the run started, naming `<run>` and the ledger
    path `.superpowers/autopilot/<run>/run.md`. Append
@@ -298,7 +304,7 @@ Anchor: **immediately after `started (phase 1)` is appended.**
 
 Anchor: **immediately after `pr: <url>` is appended** in the `pr` stage.
 
-1. `move --issue <n> --to "<status_in_review>"`. Append
+1. `move --config=<config> --issue <n> --to "<status_in_review>"`. Append
    `github: moved to in-review`.
 2. `comment --issue <n>` with the PR link. Append `github: pr comment posted`.
 

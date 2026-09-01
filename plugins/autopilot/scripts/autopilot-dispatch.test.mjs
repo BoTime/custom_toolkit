@@ -266,6 +266,99 @@ describe("main", () => {
     expect(t.written[0].text).toContain("name: autopilot-implement");
   });
 
+  it("keeps explicit Claude dispatch byte-identical to the existing default", () => {
+    const implicit = io();
+    const explicit = io();
+
+    expect(main(["pr", "--run=r1", "--worktree=/w"], implicit.deps)).toBe(0);
+    expect(main(["pr", "--host=claude", "--run=r1", "--worktree=/w"], explicit.deps)).toBe(0);
+
+    expect(explicit.written).toEqual(implicit.written);
+    expect(explicit.written[0].path).toBe(".superpowers/autopilot/r1/agents/pr.md");
+    expect(explicit.written[0].text).toBe([
+      "---",
+      "name: autopilot-implement",
+      "description: pr stage of an autopilot run",
+      "model: model-implement",
+      "effort: high",
+      "---",
+      "",
+      "r1 /w",
+      "",
+    ].join("\n"));
+  });
+
+  it("writes only a structured JSON record for Codex", () => {
+    const t = io({
+      readFile: (p) => {
+        if (p.endsWith("autopilot.codex.default.json")) return JSON.stringify(makeConfig());
+        throw new Error("ENOENT");
+      },
+    });
+
+    expect(main(["pr", "--host=codex", "--run=r1", "--worktree=/w"], t.deps)).toBe(0);
+    expect(t.out).toEqual([".superpowers/autopilot/r1/agents/pr.json"]);
+    expect(t.written).toHaveLength(1);
+    expect(t.written[0].path).toBe(".superpowers/autopilot/r1/agents/pr.json");
+    expect(JSON.parse(t.written[0].text)).toEqual({
+      role: "implement",
+      model: "model-implement",
+      reasoning_effort: "high",
+      instructions: "r1 /w\n",
+    });
+  });
+
+  it("rejects an unknown host without writing a record", () => {
+    const t = io();
+    expect(main(["pr", "--host=cursor", "--run=r1", "--worktree=/w"], t.deps)).toBe(1);
+    expect(t.written).toEqual([]);
+    expect(t.errs.join("\n")).toMatch(/unknown host.*cursor/i);
+  });
+
+  for (const field of ["model", "effort"]) {
+    it(`rejects a Codex role missing ${field} without writing a record`, () => {
+      const config = makeConfig();
+      delete config.roles.implement[field];
+      const t = io({
+        readFile: (p) => {
+          if (p.endsWith("autopilot.codex.default.json")) return JSON.stringify(config);
+          throw new Error("ENOENT");
+        },
+      });
+
+      expect(main(["pr", "--host=codex", "--run=r1", "--worktree=/w"], t.deps)).toBe(1);
+      expect(t.written).toEqual([]);
+      expect(t.errs.join("\n")).toMatch(new RegExp(`roles\\.implement.*${field}`, "s"));
+    });
+  }
+
+  it("rejects an unfilled Codex placeholder without writing a record", () => {
+    const t = io({
+      readFile: (p) => {
+        if (p.endsWith("autopilot.codex.default.json")) return JSON.stringify(makeConfig());
+        throw new Error("ENOENT");
+      },
+      readFragment: fakeFragments({ "pr-body.md": "{{run}} {{spec_path}}" }),
+    });
+
+    expect(main(["pr", "--host=codex", "--run=r1"], t.deps)).toBe(1);
+    expect(t.written).toEqual([]);
+    expect(t.errs.join("\n")).toMatch(/spec_path/);
+  });
+
+  it("rejects an unconsumed Codex flag without writing a record", () => {
+    const t = io({
+      readFile: (p) => {
+        if (p.endsWith("autopilot.codex.default.json")) return JSON.stringify(makeConfig());
+        throw new Error("ENOENT");
+      },
+    });
+
+    expect(main(["pr", "--host=codex", "--run=r1", "--worktree=/w", "--spec-path=s"], t.deps)).toBe(1);
+    expect(t.written).toEqual([]);
+    expect(t.errs.join("\n")).toMatch(/--spec-path/);
+  });
+
   it("maps a kebab-case flag onto a snake_case placeholder", () => {
     const t = io();
     main(["spec", "--run=r1", "--worktree=/w", "--branch=b", "--spec-path=docs/x.md",

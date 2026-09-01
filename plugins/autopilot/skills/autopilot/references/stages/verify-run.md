@@ -49,12 +49,14 @@ commands to run; a human runs them once.
 
 Dispatch the `verify` role. It authors the checks; the script runs them.
 
-Compose it and dispatch by the printed path:
+Compose it with the host/config pair selected at autopilot preflight, then use
+that host's dispatch protocol:
 
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" verify \
   --run=<run> \
-  --config=.claude/autopilot.json \
+  --host=<host> \
+  --config=<config> \
   --worktree=<worktree path> \
   --spec-path=<path-to-spec> \
   --verify-dir=.superpowers/autopilot/<run>/verify
@@ -66,7 +68,7 @@ Then run the checks:
 
 ```bash
 node "$AP/scripts/autopilot-verify.mjs" run \
-  --config=.claude/autopilot.json \
+  --config=<config> \
   --run-dir=.superpowers/autopilot/<run>/verify \
   --cwd=<worktree path> \
   --spec=<path-to-spec>
@@ -84,4 +86,3 @@ command. A clean `dev_command` exit means setup finished, not that the server
 died; only a non-zero exit is a failure. Do not start a dev server by hand, and
 do not check the port yourself — a stray server from a hand-started run holds
 the port and makes the next run look broken.
-

@@ -1,7 +1,7 @@
 # custom_toolkit
 
-Personal [Claude Code](https://claude.com/claude-code) plugins. The repo is
-both the marketplace and the home of the plugins it lists.
+Personal [Claude Code](https://claude.com/claude-code) and Codex plugins. The
+repo is both the marketplace and the home of the plugins it lists.
 
 ## Install
 
@@ -11,6 +11,27 @@ both the marketplace and the home of the plugins it lists.
 ```
 
 To update later: `/plugin marketplace update custom-toolkit`.
+
+### Codex
+
+```bash
+codex plugin marketplace add BoTime/custom_toolkit
+codex plugin add autopilot@custom-toolkit
+```
+
+After installing or updating the plugin, start a new Codex thread so its
+skills are discovered in that session. Autopilot's staged workflow also needs
+the same companion workflow skills it checks for at preflight, installed in
+Codex before you run it: `superpowers:writing-plans`,
+`superpowers:subagent-driven-development`,
+`superpowers:requesting-code-review`,
+`superpowers:finishing-a-development-branch`, and
+`superpowers:using-git-worktrees`.
+
+Codex reads project overrides from `.codex/autopilot.json`, layered over
+[`plugins/autopilot/autopilot.codex.default.json`](plugins/autopilot/autopilot.codex.default.json).
+Claude keeps using `.claude/autopilot.json`; the files do not replace each
+other.
 
 ## Plugins
 
@@ -46,13 +67,15 @@ is missing. It also needs a git repo with an `origin` remote and a working
 
 #### Configuration
 
-Config resolves in two layers: the plugin's
-[`autopilot.default.json`](plugins/autopilot/autopilot.default.json), with the
-project's optional `.claude/autopilot.json` layered over it. The merge is per
-key, and per role within `roles` — so overriding one role's model leaves its
-effort and the other eight roles intact.
+Config resolves in two layers. Claude loads
+[`autopilot.default.json`](plugins/autopilot/autopilot.default.json) with the
+project's optional `.claude/autopilot.json` layered over it. Codex loads
+[`autopilot.codex.default.json`](plugins/autopilot/autopilot.codex.default.json)
+with the project's optional `.codex/autopilot.json` layered over it. The merge
+is per key, and per role within `roles` — so overriding one role's model
+leaves its effort and the other roles intact.
 
-Most projects need only one key:
+Most projects need only one key, in the host-specific config file they use:
 
 ```json
 {
@@ -65,7 +88,8 @@ safe: guessing `npm test` in a Python repo fails confusingly, and skipping
 tests silently is worse — the post-rebase test run is the only thing that
 catches semantic conflicts (task A renames a function, task B adds a caller of
 the old name, git reports nothing, the branch is broken). Unset, preflight
-warns and the `land` stage parks rather than reporting green.
+warns and the `land` stage parks rather than reporting green. In Codex, put
+that override in `.codex/autopilot.json`.
 
 #### Ceremony tiers
 
@@ -143,9 +167,10 @@ run rather than reporting green.
 | `github` | four status names | Projects v2 wiring for `/autopilot-github` only. Ignored by plain `/autopilot`. |
 | `artifacts` | *(none)* | Where `verify` publishes its screenshots. Absent → screenshots stay local and the PR body is text-only. |
 
-`/autopilot-github` additionally needs the two keys that cannot be guessed. The
-four status names merge per key from the defaults, so this is usually the whole
-block:
+`/autopilot-github` additionally needs the two keys that cannot be guessed. Put
+them in the selected host config file (`.claude/autopilot.json` on Claude,
+`.codex/autopilot.json` on Codex). The four status names merge per key from the
+defaults, so this is usually the whole block:
 
 ```json
 {
@@ -246,7 +271,7 @@ claude --plugin-dir ./plugins/autopilot     # load locally for one session
 The plugin's helper scripts use only the Node standard library, so the plugin
 ships with zero runtime dependencies; vitest is the sole devDependency.
 
-Scripts bundled with a plugin are referenced through `$CLAUDE_PLUGIN_ROOT`,
-which resolves to the plugin's install directory. Paths that belong to the
-*user's* project — the run ledger under `.superpowers/`, worktrees, the spec
-output — stay project-relative.
+Scripts bundled with a plugin are located from the skill's base directory,
+which resolves to the plugin's install directory in either host. Paths that
+belong to the *user's* project — the run ledger under `.superpowers/`,
+worktrees, the spec output — stay project-relative.

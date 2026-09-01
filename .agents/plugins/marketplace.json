@@ -1,0 +1,20 @@
+{
+  "name": "custom-toolkit",
+  "interface": {
+    "displayName": "Custom Toolkit"
+  },
+  "plugins": [
+    {
+      "name": "autopilot",
+      "source": {
+        "source": "local",
+        "path": "./plugins/autopilot"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

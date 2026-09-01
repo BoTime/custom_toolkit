@@ -1,4 +1,9 @@
 import { readFileSync } from "node:fs";
+import {
+  hostConfigPath,
+  hostDefaultsPath,
+  hostEffortOverride,
+} from "./autopilot-host.mjs";
 
 export const ROLES = [
   "brainstorm", "spec", "plan", "learnings", "verify", "implement",
@@ -118,7 +123,11 @@ export function mergeConfig(defaults, project) {
   return merged;
 }
 
-export function validateConfig(obj, env) {
+export function validateConfig(
+  obj,
+  env,
+  { host = "claude", configPath = hostConfigPath(host) } = {},
+) {
   const errors = [];
   const warnings = [];
 
@@ -169,7 +178,7 @@ export function validateConfig(obj, env) {
   if (!obj.test_command) {
     warnings.push(
       "test_command: not set — the land stage will park instead of reporting tests green. " +
-        "Set it in your project's .claude/autopilot.json",
+        `Set it in your project's ${configPath}`,
     );
   }
 
@@ -260,10 +269,13 @@ export function validateConfig(obj, env) {
     }
   }
 
-  const override = env.CLAUDE_CODE_EFFORT_LEVEL;
+  const override = hostEffortOverride(host, env);
   if (override) {
+    const overrideVar = host === "codex"
+      ? "CODEX_REASONING_EFFORT"
+      : "CLAUDE_CODE_EFFORT_LEVEL";
     warnings.push(
-      `CLAUDE_CODE_EFFORT_LEVEL=${override} overrides every configured effort level`,
+      `${overrideVar}=${override} overrides every configured effort level`,
     );
   }
 
@@ -296,19 +308,21 @@ export function loadConfig(
   path,
   env = process.env,
   readFile = (p) => readFileSync(p, "utf8"),
-  defaultsPath = new URL("../autopilot.default.json", import.meta.url).pathname,
+  defaultsPath,
+  { host = "claude" } = {},
 ) {
-  const defaults = readJson(defaultsPath, readFile);
+  const resolvedDefaultsPath = defaultsPath ?? hostDefaultsPath(host);
+  const defaults = readJson(resolvedDefaultsPath, readFile);
   if (defaults === undefined) {
-    throw new Error(`${defaultsPath} is missing — the plugin install is incomplete`);
+    throw new Error(`${resolvedDefaultsPath} is missing — the plugin install is incomplete`);
   }
 
   const project = readJson(path, readFile);
   const merged = mergeConfig(defaults, project);
 
-  const { ok, errors, warnings } = validateConfig(merged, env);
+  const { ok, errors, warnings } = validateConfig(merged, env, { host, configPath: path });
   if (!ok) {
-    const source = project === undefined ? defaultsPath : `${path} (merged over defaults)`;
+    const source = project === undefined ? resolvedDefaultsPath : `${path} (merged over defaults)`;
     throw new Error(`${source} is invalid:\n  ${errors.join("\n  ")}`);
   }
   return { config: merged, warnings, usedProjectConfig: project !== undefined };

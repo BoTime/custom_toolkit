@@ -123,17 +123,64 @@ describe("run directory placement", () => {
     // A worktree-isolated session cannot Write/Edit to the main checkout,
     // though Bash appends and reads work. Recording it stops the next agent
     // rediscovering it mid-run.
-    expect(whole).toMatch(/Bash append/i);
+    //
+    // The constraint is Claude-only, so it sits in that host's dispatch
+    // protocol rather than in SKILL.md, where a Codex run would pay for it.
+    // SKILL.md must still name the file, or the constraint reaches nobody.
+    const claudeDispatch = readFileSync(
+      join(
+        HERE, "..", "skills", "autopilot",
+        "references", "stages", "claude-dispatch.md",
+      ),
+      "utf8",
+    );
+    expect(whole).toContain("references/stages/claude-dispatch.md");
+    expect(claudeDispatch).toMatch(/Bash append/i);
   });
 });
 
 describe("plugin packaging", () => {
+  const marketplaceJson = JSON.parse(
+    readFileSync(join(HERE, "..", "..", "..", ".agents", "plugins", "marketplace.json"), "utf8"),
+  );
+
   const pluginJson = JSON.parse(
     readFileSync(join(HERE, "..", ".claude-plugin", "plugin.json"), "utf8"),
   );
 
+  const codexPluginJson = JSON.parse(
+    readFileSync(join(HERE, "..", ".codex-plugin", "plugin.json"), "utf8"),
+  );
+
   it("registers the commands directory so the new command loads", () => {
     expect(pluginJson.commands).toEqual(["./commands/"]);
+  });
+
+  it("ships a Codex manifest that exposes the skills", () => {
+    expect(codexPluginJson).toMatchObject({
+      name: "autopilot",
+      version: expect.stringMatching(/^\d+\.\d+\.\d+(?:\+codex\.[\w.-]+)?$/),
+      skills: "./skills/",
+      interface: {
+        displayName: "Autopilot",
+        category: "Productivity",
+      },
+    });
+  });
+
+  it("registers autopilot in the local marketplace with the install path Codex uses", () => {
+    expect(marketplaceJson.plugins).toContainEqual({
+      name: "autopilot",
+      source: {
+        source: "local",
+        path: "./plugins/autopilot",
+      },
+      policy: {
+        installation: "AVAILABLE",
+        authentication: "ON_INSTALL",
+      },
+      category: "Productivity",
+    });
   });
 
   // No assertion pins the version literal here. scripts/bump-version.mjs now
