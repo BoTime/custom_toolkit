@@ -7,8 +7,10 @@
     {
       "name": "autopilot",
       "source": {
-        "source": "local",
-        "path": "./plugins/autopilot"
+        "source": "git-subdir",
+        "url": "https://github.com/BoTime/custom_toolkit.git",
+        "path": "./plugins/autopilot",
+        "ref": "main"
       },
       "policy": {
         "installation": "AVAILABLE",
