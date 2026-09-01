@@ -30,16 +30,39 @@ export function parseLedger(contents) {
  * `nextStage` detects a park by reading the LAST entry, so an informational
  * line appended after a `PARKED` line would unpark the run — a parked branch
  * would silently resume into the stage that parked it. Anything appended
- * purely for the record belongs here.
+ * purely for the record belongs here, `session:` measurements included.
  */
-const INFORMATIONAL = /^tier(:| escalated:)/;
+const INFORMATIONAL = /^(tier(:| escalated:)|session:)/;
+
+/**
+ * `session:` entries record how large a session had grown when it finished a
+ * stage. They are bookkeeping for the handoff cap, not pipeline progress, so
+ * every consumer below skips them: `nextStage` must not see them at all, and
+ * the timing table must not attribute a stage's duration to one.
+ */
+export const SESSION_PREFIX = "session:";
+
+const isSessionEntry = (entry) => entry.text.startsWith(SESSION_PREFIX);
+
+/** The run's `session:` measurements, oldest first. */
+export function sessionEntries(ledger) {
+  return ledger.entries.filter(isSessionEntry);
+}
 
 export function nextStage(ledger) {
-  const has = (prefix) => ledger.entries.some((e) => e.text.startsWith(prefix));
+  // Session lines interleave with stage lines, so every check here reads the
+  // pipeline entries only. This matters most for the park check below: a
+  // `session:` line appended after a PARKED line would otherwise make the run
+  // look unparked, and `/autopilot resume` would drive it straight past the
+  // decision its human partner was asked to make.
+  const entries = ledger.entries.filter((e) => !isSessionEntry(e));
+  const has = (prefix) => entries.some((e) => e.text.startsWith(prefix));
 
   // Check if the last stage-advancing entry is a PARKED line (currently
-  // parked, not historical). Informational entries are skipped: they may
-  // legitimately land after a park.
+  // parked, not historical). Informational entries — `tier` lines and
+  // `session` measurements alike — are skipped: they may legitimately land
+  // after a park, and treating one as the last entry would silently resume a
+  // run past the decision its human partner was asked to make.
   const advancing = ledger.entries.filter((e) => !INFORMATIONAL.test(e.text));
   if (advancing.length > 0) {
     const lastEntry = advancing[advancing.length - 1];
@@ -61,11 +84,17 @@ export function nextStage(ledger) {
   return "phase1";
 }
 
+/** The run's pipeline entries — everything except `session:` bookkeeping. */
+export function pipelineEntries(ledger) {
+  return ledger.entries.filter((e) => !isSessionEntry(e));
+}
+
 export function durations(ledger) {
+  const entries = pipelineEntries(ledger);
   const out = [];
-  for (let i = 1; i < ledger.entries.length; i++) {
-    const prev = ledger.entries[i - 1];
-    const cur = ledger.entries[i];
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1];
+    const cur = entries[i];
     const seconds =
       (Date.parse(cur.timestamp) - Date.parse(prev.timestamp)) / 1000;
     out.push({ from: prev.text, to: cur.text, seconds });
@@ -79,12 +108,16 @@ export function durations(ledger) {
  * `started (phase 1)` append, so time spent in preflight — before the branch
  * name is known and the ledger exists — is not counted.
  *
- * Returns null for a ledger with no entries, 0 for a single entry.
+ * `session:` entries are excluded, so a run's reported duration is the same
+ * whether or not it happened to hand off partway through.
+ *
+ * Returns null for a ledger with no pipeline entries, 0 for a single entry.
  */
 export function totalDuration(ledger) {
-  if (ledger.entries.length === 0) return null;
-  const first = ledger.entries[0];
-  const last = ledger.entries[ledger.entries.length - 1];
+  const entries = pipelineEntries(ledger);
+  if (entries.length === 0) return null;
+  const first = entries[0];
+  const last = entries[entries.length - 1];
   return (Date.parse(last.timestamp) - Date.parse(first.timestamp)) / 1000;
 }
 

@@ -277,6 +277,15 @@ describe("the real skill's references resolve", () => {
   it("SKILL.md stays smaller than the fragments it dispatches plus its own prose", () => {
     // A regression guard on the whole point of the refactor: if SKILL.md grows
     // back past this, the extraction has been undone in spirit.
-    expect(readFileSync(SKILL_PATH, "utf8").length).toBeLessThan(40_000);
+    //
+    // Raised from 40k once, for the session cap. The ceiling is a proxy for
+    // "the orchestrator holds only what changes what it does", and the test
+    // above — no dispatch fragment duplicated back inline — is what actually
+    // enforces the extraction. Raise this only after the same exercise: every
+    // sentence of rationale moved to `references/rationale.md`, leaving prose
+    // whose removal would change an agent's behaviour. The session cap cleared
+    // that bar and pays for its ~1.6k many times over, since it bounds the
+    // context of every session in the run.
+    expect(readFileSync(SKILL_PATH, "utf8").length).toBeLessThan(42_000);
   });
 });

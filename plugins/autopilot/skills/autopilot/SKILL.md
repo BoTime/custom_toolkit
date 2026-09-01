@@ -31,6 +31,11 @@ that stage. Do not redo completed stages.
   entry, report it plainly, and stop. A run parked on red tests would
   otherwise retry landing and open a pull request on a failing branch.
 
+**Read the ledger and the paths it names. Nothing else.** A handoff only pays
+while the context crossing it stays small; re-reading the spec, the plan and
+the diff to get oriented rebuilds exactly what the handoff shed. The next
+stage's dispatch tells the subagent what to read.
+
 ## Locating the plugin's scripts
 
 The plugin's `scripts/` and `references/` do **not** live in your human
@@ -285,6 +290,29 @@ node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.a
 skips them, so they are invisible to `nextStage` — a resumed run redoes
 completed stages — and the run's duration cannot be recovered. Run from the
 repository root so relative paths resolve.
+
+### The session cap
+
+A session's cost grows with the square of its own length, so no one session
+carries a whole run. **After appending a stage's completion line, record your
+size and hand off if you are over cap:**
+
+```bash
+node "$AP/scripts/autopilot-session.mjs" record .superpowers/autopilot/<branch>/run.md <stage-just-finished>
+```
+
+It prints `{"turns":N,"ctx":N,"handoff":true|false,"over":[...]}`.
+
+- `handoff: false` — continue to the next stage in this session.
+- `handoff: true` — **stop.** Report the stage you finished, the measurement,
+  and that the run continues with `/autopilot resume <branch>`. Do not start
+  the next stage.
+
+Check at a stage boundary only, never mid-stage: a session that stops halfway
+through `sdd` hands its successor no way to pick up, and the stage is redone.
+
+Caps live under `session` in `.claude/autopilot.json` (`max_turns`,
+`max_context_tokens`), layered over the plugin defaults.
 
 ### `setup`
 
@@ -770,6 +798,17 @@ verified screenshot — seeded user data, an internal admin surface, a staging
 banner — is public to anyone with the link. That is an acceptable trade for a
 bucket seeded with fixture data and an unacceptable one for a bucket that ever
 sees production screens, so point `artifacts` at the former.
+
+Last, audit the run's own session sizes:
+
+```bash
+node "$AP/scripts/autopilot-session.mjs" check .superpowers/autopilot/<branch>/run.md
+```
+
+Exit 0 means every session handed off before its cap. Non-zero names the stages
+that ran over — **report them to your human partner, do not park.** The work is
+already pushed, and the finding is about how the run was executed rather than
+whether its output is sound.
 
 The body file goes in the run directory, not `/tmp` — it is scoped to this
 branch, so two runs finishing at once cannot overwrite each other's PR body.

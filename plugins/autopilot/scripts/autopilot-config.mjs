@@ -108,6 +108,13 @@ export function mergeConfig(defaults, project) {
         : supplied;
   }
 
+  // And likewise for `session`: a project raising only `max_turns` must keep
+  // the default context cap rather than losing it to the shallow merge and
+  // leaving the run capped on one axis.
+  if (defaults.session || project.session) {
+    merged.session = { ...defaults.session, ...(project.session ?? {}) };
+  }
+
   return merged;
 }
 
@@ -225,6 +232,30 @@ export function validateConfig(obj, env) {
     for (const key of Object.keys(tiers)) {
       if (!TIERS.includes(key)) {
         errors.push(`tiers.${key}: not one of ${TIERS.join(", ")}`);
+      }
+    }
+  }
+
+  // Same reasoning as `minimalism`: absent is not an error, so `session` stays
+  // out of TOP_LEVEL and every config that predates the key keeps loading. A
+  // present but nonsensical cap is an error — a zero or negative cap would put
+  // every session over on its first turn and hand off forever, and a flattened
+  // `"session": 120` would reach the shallow spread as a number and silently
+  // leave the run uncapped on both axes.
+  const session = obj.session;
+  const sessionIsBlock =
+    typeof session === "object" && session !== null && !Array.isArray(session);
+  if (session !== undefined && !sessionIsBlock) {
+    errors.push("session: must be an object with `max_turns` / `max_context_tokens`");
+  }
+  if (sessionIsBlock) {
+    for (const key of ["max_turns", "max_context_tokens"]) {
+      const value = session[key];
+      if (
+        value !== undefined &&
+        (!Number.isInteger(value) || value < 1)
+      ) {
+        errors.push(`session.${key}: must be a positive integer`);
       }
     }
   }

@@ -7,6 +7,7 @@ import {
   totalDuration,
   formatDuration,
   formatTimingSection,
+  sessionEntries,
 } from "./autopilot-ledger.mjs";
 
 const LEDGER = `# autopilot run — task: add a CSV export button
@@ -325,5 +326,87 @@ describe("tier entries in the ledger", () => {
   it("still parks on a bare PARKED line with nothing after it", () => {
     const ledger = build("started (phase 1)", "PARKED (setup): no origin remote");
     expect(nextStage(parseLedger(ledger))).toBe("parked");
+  });
+});
+
+describe("session: entries", () => {
+  const build = (...entries) =>
+    parseLedger(
+      [
+        "# autopilot run — task: x",
+        ...entries.map((e, i) => `2026-07-29T14:0${i}:00Z  ${e}`),
+      ].join("\n"),
+    );
+
+  it("are invisible to nextStage", () => {
+    const withSession = build(
+      "started (phase 1)",
+      "session: phase1 — 44 turns, 90000 ctx",
+      "design approved",
+    );
+    const without = build("started (phase 1)", "design approved");
+    expect(nextStage(withSession)).toBe(nextStage(without));
+    expect(nextStage(withSession)).toBe("setup");
+  });
+
+  it("do not unpark a parked run when appended after the PARKED line", () => {
+    // The park check reads the last entry. A `session:` line recorded on the
+    // way out would otherwise make the run look unparked, and a later
+    // `/autopilot resume` would drive straight past the decision point.
+    const ledger = build(
+      "sdd complete (6 tasks, 0 parked)",
+      "PARKED — tests red after rebase (3 failures)",
+      "session: land — 88 turns, 140000 ctx",
+    );
+    expect(nextStage(ledger)).toBe("parked");
+  });
+
+  // Timestamps are explicit here: the pipeline entries must sit at the same
+  // instants in both ledgers, or the comparison would measure the fixture
+  // rather than the filtering.
+  const at = (...pairs) =>
+    parseLedger(
+      [
+        "# autopilot run — task: x",
+        ...pairs.map(([time, text]) => `2026-07-29T${time}Z  ${text}`),
+      ].join("\n"),
+    );
+
+  it("are excluded from the timing table", () => {
+    const withSession = at(
+      ["14:00:00", "started (phase 1)"],
+      ["14:00:30", "session: phase1 — 44 turns, 90000 ctx"],
+      ["14:01:00", "design approved"],
+    );
+    const without = at(
+      ["14:00:00", "started (phase 1)"],
+      ["14:01:00", "design approved"],
+    );
+    expect(durations(withSession)).toEqual(durations(without));
+  });
+
+  it("do not change a run's reported duration", () => {
+    const withSession = at(
+      ["14:00:00", "started (phase 1)"],
+      ["14:01:00", "design approved"],
+      ["14:05:00", "session: setup — 44 turns, 90000 ctx"],
+    );
+    const without = at(
+      ["14:00:00", "started (phase 1)"],
+      ["14:01:00", "design approved"],
+    );
+    expect(totalDuration(withSession)).toBe(totalDuration(without));
+  });
+
+  it("are listed by sessionEntries, oldest first", () => {
+    const ledger = build(
+      "session: phase1 — 40 turns, 80000 ctx",
+      "design approved",
+      "session: sdd — 90 turns, 140000 ctx",
+    );
+    expect(sessionEntries(ledger).map((e) => e.text)).toEqual([
+      "session: phase1 — 40 turns, 80000 ctx",
+      "session: sdd — 90 turns, 140000 ctx",
+    ]);
   });
 });

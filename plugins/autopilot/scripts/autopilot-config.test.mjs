@@ -653,3 +653,88 @@ describe("the tiers block", () => {
     expect(validateConfig(config, {}).ok).toBe(true);
   });
 });
+
+// `session` follows the same shape as `minimalism`: optional, merged per key,
+// out of TOP_LEVEL so configs that predate it keep loading. The caps bound how
+// long one session may run before the controller hands off to a resumed one.
+
+describe("session config", () => {
+  const DEFAULTS = "/plugin/autopilot.default.json";
+  const PROJECT = "/proj/.claude/autopilot.json";
+  const reader = (files) => (p) => {
+    if (!(p in files)) throw new Error("ENOENT");
+    return files[p];
+  };
+  const withSession = () => ({
+    ...validConfig(),
+    session: { max_turns: 120, max_context_tokens: 150000 },
+  });
+
+  it("ships both caps in autopilot.default.json", () => {
+    const defaults = JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), "..", "autopilot.default.json"),
+        "utf8",
+      ),
+    );
+    expect(defaults.session).toEqual({
+      max_turns: 120,
+      max_context_tokens: 150000,
+    });
+  });
+
+  it("keeps the context cap when a project overrides only max_turns", () => {
+    const merged = mergeConfig(withSession(), { session: { max_turns: 60 } });
+    expect(merged.session).toEqual({ max_turns: 60, max_context_tokens: 150000 });
+  });
+
+  it("does not mutate the defaults' session block", () => {
+    const defaults = withSession();
+    mergeConfig(defaults, { session: { max_turns: 40 } });
+    expect(defaults.session.max_turns).toBe(120);
+  });
+
+  it("leaves session absent when neither layer supplies one", () => {
+    const merged = mergeConfig(validConfig(), {});
+    expect(merged.session).toBeUndefined();
+  });
+
+  it("loads a config that predates the key without error", () => {
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
+    const { config, warnings } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.session).toBeUndefined();
+    expect(warnings.join("\n")).not.toMatch(/session/);
+  });
+
+  it("rejects a flattened session value", () => {
+    const result = validateConfig({ ...validConfig(), session: 120 }, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toMatch(/^session: must be an object/m);
+  });
+
+  it("rejects a cap that would put every session over on its first turn", () => {
+    const result = validateConfig(
+      { ...validConfig(), session: { max_turns: 0 } },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toMatch(/session\.max_turns/);
+  });
+
+  it("rejects a non-integer context cap", () => {
+    const result = validateConfig(
+      { ...validConfig(), session: { max_context_tokens: 1.5 } },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toMatch(/session\.max_context_tokens/);
+  });
+
+  it("accepts a block that sets only one axis", () => {
+    const result = validateConfig(
+      { ...validConfig(), session: { max_turns: 80 } },
+      {},
+    );
+    expect(result.ok).toBe(true);
+  });
+});
