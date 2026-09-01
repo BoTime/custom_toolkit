@@ -150,9 +150,9 @@ describe("nextVersion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Fixtures: the six fields exactly as they are drifted on origin/main today —
-// package.json 1.0.1, package-lock.json 1.0.0 twice, the other three 1.7.0.
-// Four of the six would be REGRESSED by a naive package.json-as-source
+// Fixtures: the seven fields exactly as they are drifted on origin/main today —
+// package.json 1.0.1, package-lock.json 1.0.0 twice, the other four 1.7.0.
+// Five of the seven would be REGRESSED by a naive package.json-as-source
 // implementation, which is what the no-regression test below pins.
 // ---------------------------------------------------------------------------
 
@@ -211,6 +211,17 @@ const PLUGIN = `{
 }
 `;
 
+const CODEX_PLUGIN = `{
+  "name": "autopilot",
+  "version": "1.7.0",
+  "description": "Take a task from idea to pull request",
+  "author": {
+    "name": "Botime"
+  },
+  "skills": "./skills/"
+}
+`;
+
 const LOCK = `{
   "name": "custom-toolkit",
   "version": "1.0.0",
@@ -245,6 +256,7 @@ function driftedFiles() {
     "package.json": PKG,
     ".claude-plugin/marketplace.json": MARKETPLACE,
     "plugins/autopilot/.claude-plugin/plugin.json": PLUGIN,
+    "plugins/autopilot/.codex-plugin/plugin.json": CODEX_PLUGIN,
     "package-lock.json": LOCK,
   };
 }
@@ -275,12 +287,13 @@ const versionsNow = (io) =>
   TARGETS.map((t) => readVersion(io.read(t.file), t));
 
 describe("TARGETS", () => {
-  it("covers all six version fields", () => {
+  it("covers all seven version fields", () => {
     expect(TARGETS.map((t) => `${t.file}#${t.field}`)).toEqual([
       "package.json#version",
       ".claude-plugin/marketplace.json#metadata.version",
       '.claude-plugin/marketplace.json#plugins[name="autopilot"].version',
       "plugins/autopilot/.claude-plugin/plugin.json#version",
+      "plugins/autopilot/.codex-plugin/plugin.json#version",
       "package-lock.json#version",
       'package-lock.json#packages[""].version',
     ]);
@@ -338,7 +351,7 @@ describe("readVersion", () => {
 describe("currentVersion", () => {
   it("returns the HIGHEST version across the drifted targets", () => {
     // 1.7.0, not package.json's 1.0.1 — this is what makes the first
-    // automated run self-healing instead of a six-field regression.
+    // automated run self-healing instead of a seven-field regression.
     expect(currentVersion(TARGETS, fakeIo(driftedFiles()))).toBe("1.7.0");
   });
 
@@ -362,16 +375,16 @@ describe("currentVersion", () => {
 });
 
 describe("writeVersion", () => {
-  it("brings all six fields to the same version (lockstep)", () => {
+  it("brings all seven fields to the same version (lockstep)", () => {
     const io = fakeIo(driftedFiles());
     writeVersion(TARGETS, "1.7.1", io);
     expect(versionsNow(io)).toEqual([
-      "1.7.1", "1.7.1", "1.7.1", "1.7.1", "1.7.1", "1.7.1",
+      "1.7.1", "1.7.1", "1.7.1", "1.7.1", "1.7.1", "1.7.1", "1.7.1",
     ]);
   });
 
   it("never moves any field backwards", () => {
-    // Four of the six would regress under a package.json-as-source
+    // Five of the seven would regress under a package.json-as-source
     // implementation. This is a structural property, not a rule to remember.
     const io = fakeIo(driftedFiles());
     const before = versionsNow(io);
@@ -423,6 +436,7 @@ describe("writeVersion", () => {
         "package-lock.json",
         "package.json",
         "plugins/autopilot/.claude-plugin/plugin.json",
+        "plugins/autopilot/.codex-plugin/plugin.json",
       ].sort(),
     );
   });
@@ -475,7 +489,7 @@ describe("main", () => {
       expect(process.exitCode).toBe(0);
     });
     expect(versionsNow(io)).toEqual([
-      "1.8.0", "1.8.0", "1.8.0", "1.8.0", "1.8.0", "1.8.0",
+      "1.8.0", "1.8.0", "1.8.0", "1.8.0", "1.8.0", "1.8.0", "1.8.0",
     ]);
   });
 
