@@ -299,8 +299,8 @@ describe("loadConfig", () => {
       ...validConfig(),
       roles: {
         ...validConfig().roles,
-        implement: { model: "gpt-5.4", effort: "medium" },
-        implement_complex: { model: "gpt-5.6", effort: "high" },
+        implement: { model: "gpt-5.6-terra", effort: "medium" },
+        implement_complex: { model: "gpt-5.6-sol", effort: "high" },
       },
     };
     const readFile = reader({
@@ -313,8 +313,8 @@ describe("loadConfig", () => {
       undefined,
       { host: "codex" },
     );
-    expect(config.roles.implement.model).toBe("gpt-5.4");
-    expect(config.roles.implement_complex.model).toBe("gpt-5.6");
+    expect(config.roles.implement.model).toBe("gpt-5.6-terra");
+    expect(config.roles.implement_complex.model).toBe("gpt-5.6-sol");
     expect(usedProjectConfig).toBe(false);
   });
 
@@ -324,7 +324,7 @@ describe("loadConfig", () => {
         ...validConfig(),
         roles: {
           ...validConfig().roles,
-          implement: { model: "gpt-5.4", effort: "medium" },
+          implement: { model: "gpt-5.6-terra", effort: "medium" },
         },
       }),
       "/proj/.codex/autopilot.json": JSON.stringify({
@@ -338,7 +338,7 @@ describe("loadConfig", () => {
       undefined,
       { host: "codex" },
     );
-    expect(config.roles.implement).toEqual({ model: "gpt-5.4", effort: "max" });
+    expect(config.roles.implement).toEqual({ model: "gpt-5.6-terra", effort: "max" });
     expect(usedProjectConfig).toBe(true);
   });
 
@@ -533,19 +533,19 @@ describe("shipped autopilot.codex.default.json", () => {
   it("ships every role with a codex model and allowed effort", () => {
     for (const role of ROLES) {
       expect(defaults.roles[role]).toBeDefined();
-      expect(["gpt-5.4", "gpt-5.6"]).toContain(defaults.roles[role].model);
+      expect(["gpt-5.6-terra", "gpt-5.6-sol"]).toContain(defaults.roles[role].model);
       expect(EFFORTS).toContain(defaults.roles[role].effort);
     }
   });
 
-  it("uses gpt-5.6 for high-complexity roles and gpt-5.4 for routine roles", () => {
-    expect(defaults.roles.brainstorm.model).toBe("gpt-5.6");
-    expect(defaults.roles.plan.model).toBe("gpt-5.6");
-    expect(defaults.roles.implement_complex.model).toBe("gpt-5.6");
-    expect(defaults.roles.fix_escalation.model).toBe("gpt-5.6");
-    expect(defaults.roles.verify.model).toBe("gpt-5.4");
-    expect(defaults.roles.implement.model).toBe("gpt-5.4");
-    expect(defaults.roles.re_review.model).toBe("gpt-5.4");
+  it("uses gpt-5.6-sol for high-complexity roles and gpt-5.6-terra for routine roles", () => {
+    expect(defaults.roles.brainstorm.model).toBe("gpt-5.6-sol");
+    expect(defaults.roles.plan.model).toBe("gpt-5.6-sol");
+    expect(defaults.roles.implement_complex.model).toBe("gpt-5.6-sol");
+    expect(defaults.roles.fix_escalation.model).toBe("gpt-5.6-sol");
+    expect(defaults.roles.verify.model).toBe("gpt-5.6-terra");
+    expect(defaults.roles.implement.model).toBe("gpt-5.6-terra");
+    expect(defaults.roles.re_review.model).toBe("gpt-5.6-terra");
   });
 });
 
