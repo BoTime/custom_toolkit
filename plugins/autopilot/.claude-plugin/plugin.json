@@ -2,7 +2,7 @@
   "name": "autopilot",
   "displayName": "Autopilot",
   "description": "Take a task from idea to pull request: interactive brainstorm, then automated spec, plan, implementation, landing, and PR",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "author": {
     "name": "Botime"
   },
