@@ -256,38 +256,17 @@ node "$AP/scripts/autopilot-dispatch.mjs" <stage> \
 
 It writes one host-native stage artifact carrying the role's model and effort
 from config plus every contract that stage owes its agent, then prints **that
-path and nothing else**. Handle that path with the selected protocol below.
+path and nothing else**. How that path is consumed differs by host:
 
-### Codex dispatch
+| `<host>` | Protocol |
+|---|---|
+| `claude` | `references/stages/claude-dispatch.md` |
+| `codex` | `references/stages/codex-dispatch.md` |
 
-For Codex, the concrete composition prefix is:
-
-```bash
-node "$AP/scripts/autopilot-dispatch.mjs" <stage> \
-  --run=<run> --host=codex --config=.codex/autopilot.json [--key=value ...]
-```
-
-The printed path is
-`.superpowers/autopilot/<run>/agents/<stage>.json`. Read that JSON record, then
-call `spawn_agent` with `task_name` `${record.role}-${stage}`, `message`
-`record.instructions`, `model` `record.model`, and `reasoning_effort`
-`record.reasoning_effort`; set `fork_turns` `"none"` so Codex accepts those
-explicit model settings and relies only on the self-contained rendered
-instructions. A missing or malformed field is a hard stop; never fill it from
-memory or substitute a different model. Wait for that agent's stage status/path
-result, then apply the same ledger rule the stage states below.
-
-### Claude dispatch
-
-For Claude, the printed path is
-`.superpowers/autopilot/<run>/agents/<stage>.md`. It is the subagent definition;
-dispatch the Agent by that printed path. The Agent tool has no `effort`
-parameter, so the definition's frontmatter carries it.
-
-**Claude-only worktree caveat:** a worktree-isolated Claude session cannot
-Write or Edit files in the main checkout, though **Bash appends (`>>`) and
-redirects still work**. On Claude, use Bash for `run.md`, `findings.jsonl`, and
-everything under `verify/`.
+**Read the row for the host selected in Preflight now, before the first
+dispatch, and read only that row.** The two artifacts differ in kind, so
+dispatching from memory of the other host's protocol fails in ways that look
+like a bad prompt rather than a wrong protocol.
 
 Four rules:
 
@@ -296,10 +275,8 @@ Four rules:
    `roles.<role>` field. Never work around it by writing a prompt yourself: a
    stage dispatched without its contract produces plausible work that skipped
    the process, and reports success.
-2. **Consume only what the host protocol requires.** On Claude, do not read the
-   composed definition; dispatch it by path. On Codex, read the JSON record
-   exactly once because its four fields are the native spawn request. Do not
-   separately open or reconstruct the rendered fragments.
+2. **Consume only what the host protocol requires**, and never separately open
+   or reconstruct the rendered fragments.
 3. **Multi-line values go to a file, and the flag says `@path`.** Write the
    value into the run directory with a quoted heredoc (`cat > path <<'EOF'`),
    then pass `--key=@path`. Single-line values — paths, the run name, the
@@ -308,10 +285,6 @@ Four rules:
 4. **Flags are kebab-case; the template's placeholders are snake_case.**
    `--spec-path` fills `{{spec_path}}`. A flag no template consumes is an
    error, because the value it carried would never have reached the agent.
-
-`$AP` is written here for readability only. Shell variables do not persist
-between Bash calls, so substitute the literal path into every command you
-actually run — or set it again at the top of each call.
 
 ### The ledger
 

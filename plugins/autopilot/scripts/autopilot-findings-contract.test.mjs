@@ -123,7 +123,19 @@ describe("run directory placement", () => {
     // A worktree-isolated session cannot Write/Edit to the main checkout,
     // though Bash appends and reads work. Recording it stops the next agent
     // rediscovering it mid-run.
-    expect(whole).toMatch(/Bash append/i);
+    //
+    // The constraint is Claude-only, so it sits in that host's dispatch
+    // protocol rather than in SKILL.md, where a Codex run would pay for it.
+    // SKILL.md must still name the file, or the constraint reaches nobody.
+    const claudeDispatch = readFileSync(
+      join(
+        HERE, "..", "skills", "autopilot",
+        "references", "stages", "claude-dispatch.md",
+      ),
+      "utf8",
+    );
+    expect(whole).toContain("references/stages/claude-dispatch.md");
+    expect(claudeDispatch).toMatch(/Bash append/i);
   });
 });
 

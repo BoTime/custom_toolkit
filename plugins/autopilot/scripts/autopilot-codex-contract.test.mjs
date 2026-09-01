@@ -19,6 +19,12 @@ const coreSkill = readSkill("autopilot", "SKILL.md");
 const verifyRun = readSkill(
   "autopilot", "references", "stages", "verify-run.md",
 );
+// The per-host dispatch protocols live beside the stage references rather than
+// inline, so a run pays for its own host's protocol and not the other's. The
+// contract is unchanged — these assertions follow the text to where it lives.
+const codexDispatch = readSkill(
+  "autopilot", "references", "stages", "codex-dispatch.md",
+);
 const githubSkill = readSkill("autopilot-github", "SKILL.md");
 const brainstormSkill = readSkill("autopilot-brainstorm", "SKILL.md");
 const visualCompanion = readSkill(
@@ -61,7 +67,7 @@ describe("Codex dispatch contract", () => {
 
 describe("Codex skill execution contract", () => {
   it("selects Codex's config and native dispatch protocol", () => {
-    const flat = flatten(coreSkill);
+    const flat = flatten(`${coreSkill}\n${codexDispatch}`);
 
     expect(flat).toContain("--host=codex");
     expect(flat).toContain("--config=.codex/autopilot.json");
@@ -85,17 +91,18 @@ describe("Codex skill execution contract", () => {
     }
   });
 
-  it("keeps Claude-only dispatch claims out of the Codex protocol", () => {
-    const start = coreSkill.indexOf("### Codex dispatch");
-    const end = coreSkill.indexOf("### Claude dispatch", start);
-    const codex = coreSkill.slice(start, end);
+  it("routes the orchestrator to the Codex protocol from SKILL.md", () => {
+    // The protocol only reaches a Codex run if SKILL.md names its file. An
+    // unnamed reference is a contract nobody reads, which the size budget
+    // would happily accept.
+    expect(coreSkill).toContain("references/stages/codex-dispatch.md");
+  });
 
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    expect(codex).not.toMatch(/Agent tool/i);
-    expect(codex).not.toMatch(/frontmatter/i);
-    expect(codex).not.toMatch(/\b(?:opus|sonnet)\b/i);
-    expect(codex).not.toMatch(/cannot Write or Edit/i);
+  it("keeps Claude-only dispatch claims out of the Codex protocol", () => {
+    expect(codexDispatch).not.toMatch(/Agent tool/i);
+    expect(codexDispatch).not.toMatch(/frontmatter/i);
+    expect(codexDispatch).not.toMatch(/\b(?:opus|sonnet)\b/i);
+    expect(codexDispatch).not.toMatch(/cannot Write or Edit/i);
   });
 
   it("uses the selected Codex config throughout the GitHub wrapper", () => {
