@@ -168,12 +168,14 @@ describe("plugin packaging", () => {
     });
   });
 
-  it("registers autopilot in the local marketplace with the install path Codex uses", () => {
+  it("registers autopilot from its Git source with the install path Codex uses", () => {
     expect(marketplaceJson.plugins).toContainEqual({
       name: "autopilot",
       source: {
-        source: "local",
+        source: "git-subdir",
+        url: "https://github.com/BoTime/custom_toolkit.git",
         path: "./plugins/autopilot",
+        ref: "main",
       },
       policy: {
         installation: "AVAILABLE",
