@@ -1,7 +1,7 @@
 {
   "name": "custom-toolkit",
   "private": true,
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Personal Claude Code plugins",
   "type": "module",
   "scripts": {
