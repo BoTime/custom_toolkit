@@ -28,22 +28,17 @@ that stage. Do not redo completed stages.
 - A stage name — jump to it and follow the pipeline from there.
 - `done` — report the PR URL from the ledger and stop.
 - `parked` — **do not continue.** Read the park reason from the ledger's last
-  entry, report it plainly, and stop. A run parked on red tests would
-  otherwise retry landing and open a pull request on a failing branch.
+  entry, report it plainly, and stop.
 
-**Read the ledger and the paths it names. Nothing else.** A handoff only pays
-while the context crossing it stays small; re-reading the spec, the plan and
-the diff to get oriented rebuilds exactly what the handoff shed. The next
-stage's dispatch tells the subagent what to read.
+**Read the ledger and the paths it names. Nothing else.** The next stage's
+dispatch tells the subagent what to read.
 
 ## Locating the plugin's scripts
 
 The plugin's `scripts/` and `references/` do **not** live in your human
 partner's project, so every command below needs the plugin's absolute path.
 
-**Do not rely on a plugin-root environment variable in Bash tool calls.** The
-host may set one only for processes it launches, such as hooks; in an agent
-shell it can be empty and lead to `ERR_MODULE_NOT_FOUND`.
+**Do not rely on a plugin-root environment variable in Bash tool calls.**
 
 When this skill loaded, the harness prefixed it with
 `Base directory for this skill: <abs path>`, pointing at
@@ -84,13 +79,27 @@ missing and stop — do not start the brainstorm.
    `superpowers:writing-plans`, `superpowers:subagent-driven-development`,
    `superpowers:requesting-code-review`,
    `superpowers:finishing-a-development-branch`,
-   `superpowers:using-git-worktrees`. A missing skill is the most dangerous
-   failure here: an agent told to follow an absent skill improvises the stage
-   and returns plausible output that skipped the process entirely.
+   `superpowers:using-git-worktrees`.
 3. **SDD scripts are executable.** `sdd-workspace`, `task-brief`, and
    `review-package` in the subagent-driven-development skill's `scripts/`.
 4. **Config is valid.** From the repository root, substitute the selected
-   literals for `<config>` and `<host>`:
+   literals for `<config>` and `<host>` in both commands below.
+
+   First check whether `<config>` exists. If `<config>` is absent, scaffold it
+   from the selected host's shipped defaults:
+
+   ```bash
+   AP="<plugin root>" && node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-config.mjs').href).then(m=>console.log('created',m.scaffoldConfig(process.argv[2],{host:process.argv[3]})))" "$AP" "<config>" "<host>"
+   ```
+
+   Then report the created path, say that `test_command` must be filled in
+   before rerunning `/autopilot`, and stop the run — do not start the
+   brainstorm. The file is left uncommitted on the current branch; committing
+   it is the developer's decision. A non-zero exit here (the directory is
+   unwritable, or the file appeared between the check and the write) is a
+   preflight failure like any other: report the error and stop.
+
+   If `<config>` exists, validate it:
 
    ```bash
    AP="<plugin root>" && node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-config.mjs').href).then(m=>{const r=m.loadConfig(process.argv[2],process.env,undefined,undefined,{host:process.argv[3]});r.warnings.forEach(w=>console.log('warning:',w));console.log(r.usedProjectConfig?'ok (project config)':'ok (plugin defaults)')})" "$AP" "<config>" "<host>"
@@ -104,9 +113,11 @@ missing and stop — do not start the brainstorm.
    - `CLAUDE_CODE_EFFORT_LEVEL` on Claude or `CODEX_REASONING_EFFORT` on Codex
      overrides every configured effort level.
 
-   Config is the selected host's shipped defaults with the project's optional
+   Config is the selected host's shipped defaults with the project's
    `<config>` layered over them, merged per key (and per role within `roles`).
-   A project with no config file runs on that host's defaults.
+   A plain `/autopilot` run in a project with no `<config>` file scaffolds it
+   from those defaults and stops instead of running on them; the project pins
+   those values from then on.
 5. **Repository preconditions.** A git repo with an `origin` remote, and
    `gh auth status` succeeding.
 
@@ -181,8 +192,7 @@ identical to one that asked two answerable and twenty judgment calls.
 
 `pattern` is the clustering key and clustering is a pure lexical match, so
 reuse the same short phrase verbatim across runs when the gap is the same
-kind, and leave the specifics to `question` and `answer`. A phrase reworded
-per question clusters with nothing.
+kind, and leave the specifics to `question` and `answer`.
 
 Validation is all-or-nothing: on any bad element the script writes nothing and
 exits non-zero, naming the offending index and field.
@@ -264,17 +274,13 @@ path and nothing else**. How that path is consumed differs by host:
 | `codex` | `references/stages/codex-dispatch.md` |
 
 **Read the row for the host selected in Preflight now, before the first
-dispatch, and read only that row.** The two artifacts differ in kind, so
-dispatching from memory of the other host's protocol fails in ways that look
-like a bad prompt rather than a wrong protocol.
+dispatch, and read only that row.**
 
 Four rules:
 
 1. **Any non-zero exit stops the run.** The message on stderr names what is
    absent — the stage, the placeholder, the flag, the fragment, the
-   `roles.<role>` field. Never work around it by writing a prompt yourself: a
-   stage dispatched without its contract produces plausible work that skipped
-   the process, and reports success.
+   `roles.<role>` field. Never work around it by writing a prompt yourself.
 2. **Consume only what the host protocol requires**, and never separately open
    or reconstruct the rendered fragments.
 3. **Multi-line values go to a file, and the flag says `@path`.** Write the

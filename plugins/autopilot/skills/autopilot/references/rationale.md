@@ -15,6 +15,28 @@ a future editor think a rule was arbitrary and delete it, it belongs here.
 
 ---
 
+## Preflight stops rather than improvises
+
+The two preflight checks worth explaining are the ones whose failure is silent.
+
+A missing skill is the most dangerous failure there: an agent told to follow an
+absent skill improvises the stage and returns plausible output that skipped the
+process entirely. Nothing downstream can tell that apart from the real thing,
+which is why the check is a hard stop and not a warning.
+
+The plugin root is resolved from the harness's base-directory line rather than
+an environment variable because the host may set one only for processes it
+launches, such as hooks; in an agent shell it can be empty and lead to
+`ERR_MODULE_NOT_FOUND` — several stages in, at the first `node "$AP/..."` call
+rather than at preflight.
+
+## A parked run stays parked (`resume`)
+
+A resume that continued past a park would act on a stage that had already
+decided it could not proceed. A run parked on red tests would otherwise retry
+landing and open a pull request on a failing branch, which is the one outcome
+the park exists to prevent.
+
 ## Task-count budget (`plan`)
 
 Task count is the single largest driver of a run's wall-clock time. `sdd` is
@@ -199,6 +221,27 @@ answers — exactly the handoff friction Phase 2 exists to remove.
 A gap in the design is a missed clarifying question, and the questions are
 still open while the brainstorm runs. That is the escape hatch; without one, an
 agent facing real ambiguity reinvents the gate to resolve it.
+
+## Question capture (`phase1`)
+
+Clustering `pattern` is a pure lexical match and nothing normalises it, so a
+phrase reworded per question clusters with nothing: the run contributes a
+singleton the findings pass never groups, and the gap it recorded stays
+invisible.
+
+## Dispatch is mechanical
+
+Both dispatch rules guard the same failure: work that looks done and is not.
+
+A stage dispatched without its contract produces plausible work that skipped
+the process, and reports success. That is why a non-zero exit from
+`autopilot-dispatch.mjs` is a stop rather than a cue to write the prompt by
+hand — the hand-written prompt costs more than the stop it avoided.
+
+The per-host protocol rows are read one at a time because the two artifacts
+differ in kind, so dispatching from memory of the other host's protocol fails
+in ways that look like a bad prompt rather than a wrong protocol, and gets
+debugged in the wrong place as a result.
 
 ## Dispatch fragments live in `references/dispatch/`
 

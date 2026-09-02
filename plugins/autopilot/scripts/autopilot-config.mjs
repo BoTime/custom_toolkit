@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   hostConfigPath,
   hostDefaultsPath,
@@ -326,4 +326,40 @@ export function loadConfig(
     throw new Error(`${source} is invalid:\n  ${errors.join("\n  ")}`);
   }
   return { config: merged, warnings, usedProjectConfig: project !== undefined };
+}
+
+/**
+ * Materialize the selected host's shipped defaults into the project's config
+ * file so every knob — per-role model and effort included — is visible and
+ * editable. `test_command` leads as an empty string: it is the one key with
+ * no default, and validateConfig already treats `""` as unset, so the
+ * scaffolded file loads with exactly the single warning an absent file
+ * produces today.
+ *
+ * Never overwrites. An existing file, malformed or not, is the developer's to
+ * fix; replacing it would silently discard their edits. No merging and no
+ * validation on write: the shipped defaults are already valid, and the
+ * project pins them from here on. Returns the written path.
+ */
+export function scaffoldConfig(
+  path,
+  {
+    host = "claude",
+    readFile = (p) => readFileSync(p, "utf8"),
+    writeFile = (p, text) => writeFileSync(p, text),
+    exists = existsSync,
+  } = {},
+) {
+  const defaultsPath = hostDefaultsPath(host); // throws on an unknown host
+  if (exists(path)) {
+    throw new Error(`${path} already exists — refusing to overwrite it`);
+  }
+  const defaults = JSON.parse(readFile(defaultsPath));
+  if (!defaults || typeof defaults !== "object" || Array.isArray(defaults)) {
+    throw new Error(
+      `${defaultsPath} is not a JSON object — the plugin install is incomplete`,
+    );
+  }
+  writeFile(path, `${JSON.stringify({ test_command: "", ...defaults }, null, 2)}\n`);
+  return path;
 }
