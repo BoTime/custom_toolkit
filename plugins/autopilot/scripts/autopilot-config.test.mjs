@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES, TIERS,
   validateConfig, validateGithubConfig, mergeConfig, loadConfig,
+  scaffoldConfig,
 } from "./autopilot-config.mjs";
+import { hostDefaultsPath } from "./autopilot-host.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -865,5 +867,115 @@ describe("session config", () => {
       {},
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("scaffoldConfig", () => {
+  const CLAUDE_DEFAULTS = hostDefaultsPath("claude");
+  const CODEX_DEFAULTS = hostDefaultsPath("codex");
+  const CLAUDE_PROJECT = "/proj/.claude/autopilot.json";
+  const CODEX_PROJECT = "/proj/.codex/autopilot.json";
+
+  // Records every write and routes reads to the real shipped defaults, so
+  // the tests answer for the file the plugin actually ships.
+  const harness = ({ present = false } = {}) => {
+    const writes = [];
+    const reads = [];
+    return {
+      writes,
+      reads,
+      deps: {
+        readFile: (p) => {
+          reads.push(p);
+          return readFileSync(p, "utf8");
+        },
+        writeFile: (p, text) => {
+          writes.push({ path: p, text });
+        },
+        exists: () => present,
+      },
+    };
+  };
+
+  it("writes the Claude defaults behind a leading empty test_command, in shipped order", () => {
+    // AC1
+    const { writes, deps } = harness();
+    const returned = scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps });
+    expect(returned).toBe(CLAUDE_PROJECT);
+    expect(writes).toHaveLength(1);
+    expect(writes[0].path).toBe(CLAUDE_PROJECT);
+    const written = JSON.parse(writes[0].text);
+    const shipped = JSON.parse(readFileSync(CLAUDE_DEFAULTS, "utf8"));
+    expect(written).toEqual({ test_command: "", ...shipped });
+    expect(Object.keys(written)).toEqual(["test_command", ...Object.keys(shipped)]);
+  });
+
+  it("reads and writes the Codex defaults on host codex", () => {
+    // AC2
+    const { writes, reads, deps } = harness();
+    scaffoldConfig(CODEX_PROJECT, { host: "codex", ...deps });
+    expect(reads).toEqual([CODEX_DEFAULTS]);
+    const written = JSON.parse(writes[0].text);
+    const shipped = JSON.parse(readFileSync(CODEX_DEFAULTS, "utf8"));
+    expect(written).toEqual({ test_command: "", ...shipped });
+    expect(Object.keys(written)).toEqual(["test_command", ...Object.keys(shipped)]);
+    expect(written.roles.plan.model).toBe("gpt-5.6-sol");
+  });
+
+  it("throws the assertHost error for an unknown host and writes nothing", () => {
+    // AC2
+    const { writes, deps } = harness();
+    expect(() => scaffoldConfig(CLAUDE_PROJECT, { host: "gemini", ...deps })).toThrow(
+      /unknown host "gemini"/,
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it("refuses to overwrite an existing file, naming the path, and never calls writeFile", () => {
+    // AC3
+    const { writes, deps } = harness({ present: true });
+    expect(() => scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps })).toThrow(
+      /already exists/,
+    );
+    expect(() => scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps })).toThrow(
+      CLAUDE_PROJECT,
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it("throws rather than scaffolding when the shipped defaults are not a JSON object", () => {
+    // Shape guard: a spread of a non-object would silently write `{}` plus
+    // the placeholder, which loadConfig would then reject far from the cause.
+    const { writes, deps } = harness();
+    const readFile = () => "[]";
+    expect(() =>
+      scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps, readFile }),
+    ).toThrow(/is not a JSON object/);
+    expect(writes).toEqual([]);
+  });
+
+  it("round-trips through loadConfig with ok and exactly the test_command warning", () => {
+    // AC4 — `ok` is implied: loadConfig throws on any error.
+    const { writes, deps } = harness();
+    scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps });
+    const readFile = (p) =>
+      p === CLAUDE_PROJECT ? writes[0].text : readFileSync(p, "utf8");
+    const { warnings, usedProjectConfig } = loadConfig(
+      CLAUDE_PROJECT, {}, readFile, undefined, { host: "claude" },
+    );
+    expect(usedProjectConfig).toBe(true);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/^test_command: not set/);
+  });
+
+  it("writes two-space-indented JSON ending in exactly one newline", () => {
+    // AC1
+    const { writes, deps } = harness();
+    scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps });
+    const text = writes[0].text;
+    expect(text).toBe(`${JSON.stringify(JSON.parse(text), null, 2)}\n`);
+    expect(text.startsWith('{\n  "test_command": "",\n')).toBe(true);
+    expect(text.endsWith("}\n")).toBe(true);
+    expect(text.endsWith("\n\n")).toBe(false);
   });
 });

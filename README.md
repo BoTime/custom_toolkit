@@ -73,7 +73,10 @@ project's optional `.claude/autopilot.json` layered over it. Codex loads
 [`autopilot.codex.default.json`](plugins/autopilot/autopilot.codex.default.json)
 with the project's optional `.codex/autopilot.json` layered over it. The merge
 is per key, and per role within `roles` — so overriding one role's model
-leaves its effort and the other roles intact.
+leaves its effort and the other roles intact. A first plain `/autopilot` run
+in a project with no config file writes that host's full defaults to the file,
+with an empty `test_command` to fill in, and stops; the project pins those
+values from then on until you edit them.
 
 Most projects need only one key, in the host-specific config file they use:
 
