@@ -354,7 +354,7 @@ export function scaffoldConfig(
   if (exists(path)) {
     throw new Error(`${path} already exists — refusing to overwrite it`);
   }
-  const defaults = JSON.parse(readFile(defaultsPath));
+  const defaults = readJson(defaultsPath, readFile);
   if (!defaults || typeof defaults !== "object" || Array.isArray(defaults)) {
     throw new Error(
       `${defaultsPath} is not a JSON object — the plugin install is incomplete`,
