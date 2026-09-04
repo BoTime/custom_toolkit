@@ -7,15 +7,23 @@
 //
 // This test composes the `sdd` stage the way a dispatch does and asserts the
 // load-bearing pieces are present in what it carries, where a dispatched agent
-// will actually read them. The run-directory rules stay in SKILL.md, and the
-// assertions about those keep reading it.
+// will actually read them.
+//
+// The run directory is documented in two places, and the assertions below
+// follow that split. The operative rule — the main-checkout placement, the
+// single `<run>` definition, `findings.jsonl` inheriting the placement — stays
+// in SKILL.md, and the assertions about it keep reading `whole`. The *reasons*
+// live in `references/rationale.md`, so the two assertions about those read
+// that file's run-directory section instead. Reading the section rather than
+// either file whole is what keeps an unrelated sentence elsewhere from
+// standing in for reasoning that has been deleted.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { STAGES } from "./autopilot-findings.mjs";
-import { readSkill, unwrap } from "./skill-sections.mjs";
+import { between, readSkill, SKILL_DIR, unwrap } from "./skill-sections.mjs";
 import { composeStage } from "./dispatch-fixture.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +86,15 @@ describe("sdd findings-capture contract", () => {
 
 const whole = unwrap(skill);
 
+/** The run-directory section of `references/rationale.md`, where the reasons live. */
+const runDirectoryReasons = unwrap(
+  between(
+    readFileSync(join(SKILL_DIR, "references", "rationale.md"), "utf8"),
+    /The run directory lives in the main checkout/,
+    /^## /m,
+  ),
+);
+
 describe("sdd complete records fix rounds", () => {
   it("shows the fix-round count in the ledger entry", () => {
     expect(section).toMatch(/fix rounds/i);
@@ -106,13 +123,13 @@ describe("run directory placement", () => {
   it("gives the before-the-worktree reason", () => {
     // The ledger is appended during Phase 1, and `setup` — which creates the
     // worktree — is the next stage.
-    expect(whole).toMatch(/before the worktree|exists before/i);
+    expect(runDirectoryReasons).toMatch(/before the worktree|exists before/i);
   });
 
   it("gives the survives-the-worktree reason", () => {
     // The reaper deletes worktrees after merge; a ledger inside one is
     // destroyed along with every completed run's PR URL.
-    expect(whole).toMatch(/reaper deletes|survive/i);
+    expect(runDirectoryReasons).toMatch(/reaper deletes|survive/i);
   });
 
   it("says findings.jsonl inherits the same placement", () => {
