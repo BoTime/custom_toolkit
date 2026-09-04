@@ -545,13 +545,13 @@ describe("the sdd review-depth gate", () => {
   });
 });
 
-// The one block in this file that does touch the filesystem: AC5 pins the
-// untiered dispatch's actual bytes, which only the real fragments can carry.
+// The one block in this file that does touch the filesystem: it pins the
+// untiered dispatch's assembly, which only the real fragments can carry.
 describe("the untiered plan dispatch", () => {
-  it("is byte-identical to the pre-tier assembly", () => {
-    // AC5. Rebuilds what the pre-tier compose() produced, from the same
-    // primitives, rather than restating the new selection logic — so this
-    // pins bytes and not the implementation that emits them.
+  it("selects, orders and joins exactly body + writing-plans + budget + learnings", () => {
+    // AC4. Rebuilds what compose() must produce from the same primitives,
+    // rather than restating the selection logic — so this pins the assembly
+    // and not the implementation that emits it.
     const config = defaultConfig();
     const values = dummyValues("plan");
     const role = config.roles.plan;
@@ -566,6 +566,7 @@ describe("the untiered plan dispatch", () => {
           "---",
         ].join("\n"),
         render(readFragment("plan-body.md"), values),
+        render(readFragment("plan-writing-plans.md"), values),
         readFragment("plan-budget.md"),
         readFragment("plan-learnings.md"),
       ]
@@ -711,5 +712,91 @@ describe("the default spec dispatch", () => {
     expect(small).not.toContain("commit it");
     expect(small).not.toContain("first commit");
     expect(small).toContain(readFragment("spec-criteria.md").replace(/\s+$/, ""));
+  });
+});
+
+describe("the plan document-shape gate", () => {
+  const composePlan = (values) =>
+    compose({
+      stage: "plan",
+      config: makeConfig(),
+      values: { run: "r", worktree: "/w", spec_path: "s", plan_path: "p", ...values },
+      fragmentReader: fakeFragments({
+        "plan-body.md": "{{run}}{{worktree}}{{spec_path}}{{plan_path}}",
+      }),
+      worktreeHas: () => false,
+    });
+
+  it("carries the writing-plans fragment on default, standard and large", () => {
+    // AC4
+    for (const values of [{}, { tier: "standard" }, { tier: "large" }]) {
+      const out = composePlan(values);
+      expect(out).toContain("FRAGMENT(plan-writing-plans.md)");
+      expect(out).not.toContain("FRAGMENT(plan-inline-small.md)");
+    }
+  });
+
+  it("swaps in the inline shape on small", () => {
+    // AC5
+    const out = composePlan({ tier: "small" });
+    expect(out).toContain("FRAGMENT(plan-inline-small.md)");
+    expect(out).not.toContain("FRAGMENT(plan-writing-plans.md)");
+  });
+
+  it("puts the document shape ahead of the task-count budget", () => {
+    const out = composePlan({ tier: "small" });
+    expect(out.indexOf("FRAGMENT(plan-inline-small.md)"))
+      .toBeLessThan(out.indexOf("plan-budget-small"));
+  });
+
+  it("requires --plan-path on every tier", () => {
+    // AC7
+    for (const tier of [undefined, "small", "standard", "large"]) {
+      const values = { run: "r", worktree: "/w", spec_path: "s" };
+      if (tier) values.tier = tier;
+      const call = () =>
+        compose({
+          stage: "plan", config: makeConfig(), values,
+          fragmentReader: fakeFragments({
+            "plan-body.md": "{{run}}{{worktree}}{{spec_path}}{{plan_path}}",
+          }),
+          worktreeHas: () => false,
+        });
+      expect(call).toThrow(/\{\{plan_path\}\}/);
+      expect(call).toThrow(/--plan-path/);
+    }
+  });
+});
+
+// Touches the real files.
+describe("the small plan dispatch", () => {
+  const small = () => composeStage("plan", { extraValues: { tier: "small" } });
+
+  it("never names writing-plans", () => {
+    // AC5 — the point of the inline shape is that no planning sub-skill runs.
+    expect(small()).not.toContain("superpowers:writing-plans");
+    expect(small()).not.toContain("writing-plans");
+  });
+
+  it("states the one-step escalation to standard and its return-line form", () => {
+    // AC6. Whitespace-tolerant where the fragment may wrap: the assertion is
+    // about the sentence reaching the agent, not about the column it breaks at.
+    const out = small();
+    expect(out).toMatch(/escalat/i);
+    expect(out).toMatch(/tier\s+`standard`/);
+    expect(out).toContain("escalated to standard: <reason>");
+    expect(out).toContain("## Escalation");
+    expect(out).toMatch(/at most once|never moves more than one step/i);
+  });
+
+  it("keeps the writing-plans text in the default dispatch and out of the small one", () => {
+    // Both directions, so neither half passes trivially.
+    const values = dummyValues("plan");
+    const moved = render(readFragment("plan-writing-plans.md"), values).replace(/\s+$/, "");
+    expect(composeStage("plan")).toContain(moved);
+    expect(small()).not.toContain(moved);
+    expect(small()).toContain(
+      render(readFragment("plan-inline-small.md"), values).replace(/\s+$/, ""),
+    );
   });
 });

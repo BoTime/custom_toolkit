@@ -412,6 +412,7 @@ node "$AP/scripts/autopilot-dispatch.mjs" plan \
   --config=<config> \
   --worktree=<worktree path> \
   --spec-path=<path-to-spec> \
+  --plan-path=<path-to-plan> \
   --tier=<tier>
 ```
 

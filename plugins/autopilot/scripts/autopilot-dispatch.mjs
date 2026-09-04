@@ -74,14 +74,21 @@ export const STAGES = {
   plan: {
     role: "plan",
     body: "plan-body.md",
-    fragments: ({ config, worktreeHas, values, fragmentReader }) => [
-      values?.tier === undefined
-        ? "plan-budget.md"
-        : { text: tierBudget({ config, tier: values.tier, fragmentReader }) },
-      ...(laddered(config) ? ["plan-minimalism-lite.md"] : []),
-      ...(fullLadder(config) ? ["plan-minimalism-full.md"] : []),
-      ...(worktreeHas("docs/autopilot/learnings.md") ? ["plan-learnings.md"] : []),
-    ],
+    fragments: ({ config, worktreeHas, values, fragmentReader }) => {
+      const tier = values?.tier === undefined ? undefined : assertTier(values.tier);
+      return [
+        // The document shape first, then how many tasks may go in it.
+        tier === "small"
+          ? { file: "plan-inline-small.md" }
+          : { file: "plan-writing-plans.md" },
+        tier === undefined
+          ? "plan-budget.md"
+          : { text: tierBudget({ config, tier, fragmentReader }) },
+        ...(laddered(config) ? ["plan-minimalism-lite.md"] : []),
+        ...(fullLadder(config) ? ["plan-minimalism-full.md"] : []),
+        ...(worktreeHas("docs/autopilot/learnings.md") ? ["plan-learnings.md"] : []),
+      ];
+    },
   },
   sdd: {
     role: "implement",

@@ -67,7 +67,7 @@ describe("every stage composes a valid subagent definition", () => {
     // every run, and one losing a placeholder would silently drop a value.
     const EXPECTED = {
       spec: ["run", "worktree", "branch", "spec_path", "design", "criteria_source"],
-      plan: ["run", "worktree", "spec_path"],
+      plan: ["run", "worktree", "spec_path", "plan_path"],
       sdd: ["run", "worktree", "plan_path"],
       verify: ["run", "worktree", "spec_path", "verify_dir"],
       "verify-fix": ["run", "worktree", "failing_criteria", "failures"],
