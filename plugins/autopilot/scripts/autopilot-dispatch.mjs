@@ -54,13 +54,22 @@ const fullLadder = (config) => config?.minimalism?.mode === "full";
  * contracts a stage carries are not a project's choice.
  *
  * `fragments` returns entries in dispatch order. A string names a file under
- * DISPATCH_DIR; an object with a `text` key is rendered inline.
+ * DISPATCH_DIR, inserted verbatim and never rendered; an object with a `text`
+ * key is already-rendered inline text; an object with a `file` key names a file
+ * under DISPATCH_DIR that is rendered, so its placeholders count towards what
+ * the dispatch requires and consumes.
  */
 export const STAGES = {
   spec: {
     role: "spec",
     body: "spec-body.md",
-    fragments: () => ["spec-criteria.md"],
+    fragments: ({ values }) => {
+      const tier = values?.tier === undefined ? undefined : assertTier(values.tier);
+      return [
+        { file: tier === "small" ? "spec-small.md" : "spec-commit.md" },
+        "spec-criteria.md",
+      ];
+    },
   },
   plan: {
     role: "plan",
@@ -110,7 +119,10 @@ export const STAGES = {
   pr: {
     role: "implement",
     body: "pr-body.md",
-    fragments: () => [],
+    fragments: ({ values }) => {
+      const tier = values?.tier === undefined ? undefined : assertTier(values.tier);
+      return tier === "small" ? [{ file: "pr-small.md" }] : [];
+    },
   },
 };
 
@@ -155,6 +167,17 @@ export function roleTable(config) {
 /** The tier one step up the ladder, or undefined for the top tier. */
 const nextTier = (tier) => TIERS[TIERS.indexOf(tier) + 1];
 
+/** The tier a `--tier` flag names, or an error naming all three accepted values. */
+export function assertTier(tier) {
+  if (!TIERS.includes(tier)) {
+    throw new Error(
+      `--tier=${tier} is not one of ${TIERS.join(", ")} — ` +
+        `a silent fallback would produce a run whose ceremony nobody chose`,
+    );
+  }
+  return tier;
+}
+
 /**
  * The tier's task-count budget, with the configured ceiling rendered in.
  *
@@ -163,12 +186,7 @@ const nextTier = (tier) => TIERS[TIERS.indexOf(tier) + 1];
  * written into a file selected by name would ship to the agent literally.
  */
 export function tierBudget({ config, tier, fragmentReader }) {
-  if (!TIERS.includes(tier)) {
-    throw new Error(
-      `--tier=${tier} is not one of ${TIERS.join(", ")} — ` +
-        `a silent fallback would produce a run whose ceremony nobody chose`,
-    );
-  }
+  assertTier(tier);
   const ceilingFor = (name) => {
     const ceiling = config?.tiers?.[name];
     if (!Number.isInteger(ceiling) || ceiling < 1) {
@@ -265,7 +283,28 @@ function composeInstructions({
 
   const role = requireRole(config, entry.role);
   const template = fragmentReader(entry.body);
-  const placeholders = placeholdersIn(template);
+
+  // Fragments are resolved before the checks below, because a `{file}`
+  // fragment's placeholders are part of what this dispatch requires and
+  // consumes. `pr-small.md` is the case that forces it: `--spec-path` reaches
+  // the `pr` agent through a fragment and through nothing else, so the body
+  // alone cannot say whether the flag is required or a typo.
+  const fragments = entry.fragments({ config, worktreeHas, values, fragmentReader });
+  const rendered = fragments.map((fragment) => {
+    if (typeof fragment === "string") return { text: fragmentReader(fragment) };
+    if (fragment.file) {
+      const source = fragmentReader(fragment.file);
+      return { text: render(source, values), placeholders: placeholdersIn(source) };
+    }
+    return { text: fragment.text };
+  });
+
+  const placeholders = [...placeholdersIn(template)];
+  for (const part of rendered) {
+    for (const p of part.placeholders ?? []) {
+      if (!placeholders.includes(p)) placeholders.push(p);
+    }
+  }
 
   // An unfilled placeholder is an error, not an empty string: an empty
   // {{spec_path}} produces an agent told to write its spec to nowhere, which it
@@ -292,10 +331,7 @@ function composeInstructions({
     );
   }
 
-  const parts = [render(template, values)];
-  for (const fragment of entry.fragments({ config, worktreeHas, values, fragmentReader })) {
-    parts.push(typeof fragment === "string" ? fragmentReader(fragment) : fragment.text);
-  }
+  const parts = [render(template, values), ...rendered.map((r) => r.text)];
   const instructions = `${parts.map((p) => p.replace(/\s+$/, "")).join("\n\n")}\n`;
   return { entry, role, instructions };
 }

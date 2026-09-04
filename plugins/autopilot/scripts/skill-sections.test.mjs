@@ -24,7 +24,7 @@ import {
   topSection,
   between,
 } from "./skill-sections.mjs";
-import { STAGES } from "./autopilot-dispatch.mjs";
+import { STAGES, readFragment } from "./autopilot-dispatch.mjs";
 import { TIERS } from "./autopilot-config.mjs";
 import { defaultConfig } from "./dispatch-fixture.mjs";
 
@@ -240,10 +240,18 @@ describe("the real skill's references resolve", () => {
       // setting is not reported as an orphan.
       for (const mode of ["off", "lite", "full"]) {
         for (const has of [true, false]) {
-          for (const values of [undefined, { tasks: "1" }]) {
+          for (const values of [
+            undefined, { tasks: "1" },
+            { tier: "small" }, { tier: "standard" }, { tier: "large" },
+          ]) {
             const config = defaultConfig({ minimalism: { mode } });
-            for (const f of entry.fragments({ config, worktreeHas: () => has, values })) {
+            // fragmentReader is required now that a tiered `values` reaches
+            // the plan recipe: it renders its tier budget through it.
+            for (const f of entry.fragments({
+              config, worktreeHas: () => has, values, fragmentReader: readFragment,
+            })) {
               if (typeof f === "string") declared.add(f);
+              else if (f.file) declared.add(f.file);
             }
           }
         }
