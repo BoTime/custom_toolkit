@@ -214,10 +214,12 @@ line to the ledger verbatim, immediately after `design approved`:
 2026-08-26T14:03:01Z  tier: small
 ```
 
-The tier caps how far `plan` may decompose the work. It never decides which
-documents get written — `spec` and `plan` run on every tier. If the handoff
-carries no tier, append nothing and omit `--tier` at the `plan` dispatch: the
-run gets the untiered budget, which is more ceremony rather than less.
+The tier caps how far `plan` may decompose the work, and on `small` it also
+picks the document shape: `spec` and `plan` run on every tier without
+exception, but on `small` they are short and live in the run directory,
+uncommitted. If the handoff carries no tier, append nothing and omit `--tier`
+at the `plan` dispatch: the run gets the untiered budget, which is more
+ceremony rather than less.
 
 **The brainstorm's handoff ends Phase 1.** Append `design approved` and go
 straight into `setup` in the same turn. Do not re-present the design, do not
@@ -238,15 +240,8 @@ two names for one value. It is not the worktree directory name and not the
 follow them. Pick it once and reuse it verbatim.
 
 The run directory is `.superpowers/autopilot/<run>/` in the **main checkout** —
-never inside the worktree. `run.md`, `findings.jsonl` and `verify/` live there,
-and `findings.jsonl` inherits this placement for two reasons:
-
-1. **It exists before the worktree does.** `started (phase 1)` and
-   `design approved` are appended during Phase 1, and `setup` — the stage that
-   creates the worktree — comes after them.
-2. **It must survive the worktree.** The reaper deletes worktrees after merge.
-   A ledger inside one destroys the record of every completed run, including
-   the PR URL that `nextStage` returns `done` on.
+never inside the worktree. `run.md` and `verify/` live there, and
+`findings.jsonl` inherits the same placement.
 
 **Every stage:** re-read the ledger before dispatching, append after. Stage
 outputs go to files; a stage returns a status line and a path, never content.
@@ -301,9 +296,7 @@ carry an ISO timestamp, and `append()` is what stamps it:
 node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/<branch>/run.md','<entry text>'))" "$AP"
 ```
 
-`cat`/heredoc or the Write tool produce untimestamped lines. `parseLedger`
-skips them, so they are invisible to `nextStage` — a resumed run redoes
-completed stages — and the run's duration cannot be recovered. Run from the
+`cat`/heredoc or the Write tool produce untimestamped lines. Run from the
 repository root so relative paths resolve.
 
 ### The session cap
@@ -350,9 +343,7 @@ node "$AP/scripts/autopilot-reaper.mjs" --apply \
   --dir=<config.worktree_dir> --base=<config.base_ref>
 ```
 
-Pass both flags explicitly from config — a project that overrides either would
-otherwise have the reaper scanning the wrong directory and silently reaping
-nothing. Report what it kept and why.
+Pass both flags explicitly from config. Report what it kept and why.
 
 Create the worktree from `base_ref` using `superpowers:using-git-worktrees`.
 Phase 2 is unattended, so answer its consent question up front in the same
@@ -368,6 +359,12 @@ Append: `worktree: <path> (branch <name>)`.
 Dispatch the `spec` role to write the approved design into
 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` **inside the worktree**
 and commit it. This is the run's first commit.
+
+On `small`, pass `--tier=small` and `--spec-path=<absolute run dir>/spec.md`
+instead: the spec is a short scratch document in the run directory and is
+never committed. On every other tier pass the committed
+`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` path as today, and
+`--tier=<tier>` when the ledger carries one — omit the flag when it does not.
 
 **The spec must carry an `## Acceptance criteria` section** — the run's one
 statement of what "done" means, which `verify` reads to decide what to check in
@@ -394,11 +391,9 @@ Dispatch with the selected host protocol.
 
 `/autopilot-github` seeds the criteria from the issue body, a plain
 `/autopilot` from the brainstorm's design — that difference is what
-`--criteria-source` carries, and nothing else in the stage changes. Either way
-the spec is where they land, which is what lets `plan` and `verify` both read
-one list.
+`--criteria-source` carries, and nothing else in the stage changes.
 
-Append: `spec committed → <path>`.
+Append: `spec committed → <path>` — or, on `small`, `spec written → <path>`.
 
 ### `plan`
 
@@ -416,28 +411,21 @@ node "$AP/scripts/autopilot-dispatch.mjs" plan \
   --tier=<tier>
 ```
 
+`--plan-path` is required on every tier. On `small` it is
+`<absolute run dir>/plan.md`; otherwise
+`docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md` inside the worktree.
+
 Dispatch with the selected host protocol.
 
 `--tier` is the `tier:` entry's value, read from the ledger you re-read before
 dispatching. **Omit the flag entirely when the ledger has no `tier:` entry** —
 a resumed run whose ledger predates tiering, or a brainstorm that returned no
-tier. Do not guess one. An unrecognised value is a compose-time error naming
-the three accepted values, because a typo would otherwise produce a run whose
-ceremony nobody chose.
+tier. Do not guess one. An unrecognised value is a compose-time error.
 
-Task count is the single largest driver of a run's wall-clock time, so the
-composed definition carries a task-count budget — the tier's ceiling when
-`--tier` is present, and the untiered 1–5 range when it is not. It also
-carries a minimalism ladder when `minimalism.mode` is `lite` or `full`, and a
-learnings instruction when the worktree has `docs/autopilot/learnings.md` —
-the plan agent is the one consumer of the run's accumulated learnings, and
-every other stage is deliberately learnings-free. The script reads all three
-conditions from merged config and the worktree; there is nothing to gate by
-hand.
-
-The plan ladder governs task decomposition only — `sdd` carries a separate
-minimalism contract about how code gets written, and the two must not be
-collapsed.
+The composed definition carries a task-count budget — the tier's ceiling when
+`--tier` is present, and the untiered 1–5 range when it is not — plus a
+minimalism ladder and a learnings instruction when config and the worktree
+call for them. There is nothing to gate by hand.
 
 #### Derive the verify recipe
 
@@ -492,7 +480,8 @@ plan complete → docs/superpowers/plans/2026-08-26-x-plan.md (2 tasks)
 
 Escalation is the plan stage's own one-step move and needs no answer from you:
 it is never a park and never a question. A tier is never lowered, and never
-escalates twice in a run.
+escalates twice in a run. On `small`, an escalation keeps the scratch documents
+and the inline plan shape — nothing is promoted, rerun or committed.
 
 Append: `plan complete → <path> (<n> tasks)`.
 
@@ -595,9 +584,8 @@ silently has no section at all. And `nextStage` resumes at `learnings` by
 matching an entry starting `verify`, so a stage that skips without appending
 its ledger line sends every later resume back through `verify` forever.
 
-A backend repo costs nothing: it writes no `(ui)` criteria and this stage never
-speaks. A criterion with no test is a failure, not a pass — a run that declared
-UI criteria and could not open a browser must not report success.
+A criterion with no test is a failure, not a pass — a run that declared UI
+criteria and could not open a browser must not report success.
 
 #### Running it
 
@@ -755,10 +743,7 @@ absent test command as a pass.
   continues.
 - `error` — park.
 
-The test run after the rebase is not optional. Semantic conflicts rebase
-cleanly and still break the branch: task A renames a function, task B adds a
-caller of the old name in a file A never touched, git reports nothing, and the
-branch is broken. The suite is the only thing that catches this.
+The test run after the rebase is not optional.
 
 ### `pr`
 
@@ -769,6 +754,10 @@ node "$AP/scripts/autopilot-dispatch.mjs" pr \
   --config=<config> \
   --worktree=<worktree path>
 ```
+
+On `small`, add `--tier=small --spec-path=<absolute run dir>/spec.md`: the
+spec was never committed, so the PR description is where its design paragraph
+and acceptance criteria survive.
 
 Dispatch with the selected host protocol. It runs
 `superpowers:finishing-a-development-branch`, answering the menu with option 2

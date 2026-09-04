@@ -221,7 +221,7 @@ describe("every ledger prefix nextStage matches still appears in SKILL.md", () =
   const prefixes = [...source.matchAll(/has\("([^"]+)"\)/g)].map((m) => m[1]);
 
   it("finds the ten prefixes in nextStage's source", () => {
-    expect(prefixes).toHaveLength(9); // `started (phase 1)` is the `return "phase1"` default
+    expect(prefixes).toHaveLength(10); // `started (phase 1)` is the `return "phase1"` default
     expect(prefixes).toContain("sdd complete");
     expect(prefixes).toContain("learnings committed");
   });
@@ -232,7 +232,7 @@ describe("every ledger prefix nextStage matches still appears in SKILL.md", () =
 
   it.each([
     "pr:", "rebase clean", "learnings committed", "sdd complete",
-    "plan complete", "spec committed", "worktree:", "design approved",
+    "plan complete", "spec committed", "spec written", "worktree:", "design approved",
   ])("%s appears verbatim", (prefix) => {
     expect(skill).toContain(prefix);
   });

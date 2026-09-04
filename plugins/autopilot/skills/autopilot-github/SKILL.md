@@ -39,8 +39,8 @@ Two structural rules make that work.
    Codex JSON-record and `spawn_agent` protocol.
 2. **Never touch autopilot's pattern-matched seams.** `nextStage` resumes a run
    by prefix-matching ledger text — `pr:`, `rebase clean`, `learnings committed`,
-   `verify`, `sdd complete`, `plan complete`, `spec committed`, `worktree:`,
-   `design approved` — and
+   `verify`, `sdd complete`, `plan complete`, `spec committed`, `spec written`,
+   `worktree:`, `design approved` — and
    detects a park by `PARKED` at the start of the ledger's **last** entry. Every
    line this wrapper appends is prefixed `github: `, which collides with none of
    them, subject to the ordering rule in Delta 3c.
