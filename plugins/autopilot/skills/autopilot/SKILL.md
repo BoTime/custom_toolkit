@@ -397,8 +397,8 @@ Append: `spec committed → <path>` — or, on `small`, `spec written → <path>
 
 ### `plan`
 
-Dispatch the `plan` role. It invokes `superpowers:writing-plans` against the
-approved spec and returns the plan path.
+Dispatch the `plan` role. It turns the approved spec into a plan and returns
+the plan path.
 
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" plan \
@@ -429,7 +429,7 @@ call for them. There is nothing to gate by hand.
 
 #### Derive the verify recipe
 
-If the committed spec carries no `(ui)` acceptance criterion, skip this — the
+If the spec carries no `(ui)` acceptance criterion, skip this — the
 `verify` stage will skip too, and a recipe nothing reads is waste. Otherwise
 derive one now, because `verify` runs next.
 
