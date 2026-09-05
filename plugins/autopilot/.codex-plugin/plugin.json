@@ -1,6 +1,6 @@
 {
   "name": "autopilot",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "description": "Take a task from idea to pull request through a guided brainstorm and staged delivery workflow.",
   "author": {
     "name": "Botime"
