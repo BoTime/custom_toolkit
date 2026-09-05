@@ -267,6 +267,13 @@ export function validateConfig(
         errors.push(`session.${key}: must be a positive integer`);
       }
     }
+    // `on_cap` decides what crossing a cap does: `handoff` (default) stops
+    // the session at the stage boundary, `continue` records the size and
+    // keeps going — for unattended runs where nobody can type `resume`.
+    const onCap = session.on_cap;
+    if (onCap !== undefined && !["handoff", "continue"].includes(onCap)) {
+      errors.push("session.on_cap: must be one of handoff, continue");
+    }
   }
 
   const override = hostEffortOverride(host, env);
