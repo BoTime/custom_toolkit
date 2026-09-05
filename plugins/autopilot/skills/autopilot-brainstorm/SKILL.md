@@ -172,6 +172,14 @@ ledger. Prefer the smaller tier when the two are close.
 - Return control to the autopilot orchestrator. It drives its own `spec` and
   `plan` stages from here — do NOT invoke writing-plans or any other
   implementation skill yourself.
+- **Handing back is not ending the turn.** When this skill runs in-session,
+  the orchestrator is the same assistant that just stated the design — there
+  is no one else to pick it up. The message that states the design and the
+  `tier:` line must be followed, in that same assistant turn, by the
+  orchestrator's next tool calls: capture the clarifying questions, append
+  `design approved` and `tier:` to the ledger, and start `setup`. Stopping
+  after the design statement stalls the run until the developer types
+  something, which is the exact gate this fork removed.
 
 ## Visual Companion
 

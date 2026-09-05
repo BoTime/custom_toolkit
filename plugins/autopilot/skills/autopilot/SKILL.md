@@ -227,6 +227,13 @@ summarize it back for confirmation, and do not ask whether to proceed. The
 clarifying questions already collected every decision. Announce the transition
 in one line ("Design settled — starting Phase 2") and dispatch.
 
+The design statement is **never the last thing in an assistant turn**. When the
+brainstorm runs in-session, you are the orchestrator it hands back to, so the
+turn that states the design must continue with tool calls — question capture,
+the ledger appends, `setup` — before you stop. A turn that ends on the design
+or the `tier:` line is a silent approval gate: the run sits idle until the
+developer notices and types something.
+
 ## Phase 2 — automated
 
 Do not ask your human partner anything in Phase 2 unless a stage parks.
@@ -894,6 +901,7 @@ Never check for it, never wait on it.
 | "The run parked, but I know the fix — I'll resume it" | A park is a decision point for your human partner. Resuming past it opens a PR on a branch that parked for a reason. |
 | "Let me restate the design before I start Phase 2" | The clarifying questions already collected every decision. Re-presenting asks your human partner to approve their own answers and stalls the run on a reply it doesn't need. Append `design approved` and dispatch `setup`. |
 | "I'll just confirm they're ready for me to start" | Running `/autopilot` *is* that confirmation. Phase 2 starts the moment the brainstorm hands the design back. |
+| "The brainstorm handed back — my turn is done, the orchestrator takes it from here" | You *are* the orchestrator. Ending the turn on the design statement is a gate by another name. Capture the questions, append `design approved`, and dispatch `setup` in the same turn. |
 | "The tests are green, so the feature works" | The suite proves the code does what the code says. A UI criterion is verified by opening it. That is what `verify` is for. |
 | "No verify recipe, so I'll just start the dev server myself and look" | A hand-started server holds the port after the run and makes the next one look broken. No `(ui)` criteria skips; a `(ui)` criterion with no recipe parks. |
 | "Verification failed but I can see the fix — I'll patch it here" | Controller fixes skip review. The fix round is a dispatch, and there is exactly one. |
