@@ -410,3 +410,40 @@ describe("session: entries", () => {
     ]);
   });
 });
+
+describe("the small tier's spec entry", () => {
+  const build = (...texts) =>
+    parseLedger(
+      [
+        "# autopilot run — task: x",
+        ...texts.map((t, i) => `2026-09-04T10:0${i}:00Z  ${t}`),
+      ].join("\n"),
+    );
+
+  it("transitions to plan on `spec written`, exactly as on `spec committed`", () => {
+    // AC10
+    const written = build(
+      "started (phase 1)", "design approved",
+      "worktree: .claude/worktrees/x (branch x)",
+      "spec written → /repo/.superpowers/autopilot/x/spec.md",
+    );
+    const committed = build(
+      "started (phase 1)", "design approved",
+      "worktree: .claude/worktrees/x (branch x)",
+      "spec committed → docs/superpowers/specs/2026-09-04-x-design.md",
+    );
+    expect(nextStage(written)).toBe("plan");
+    expect(nextStage(written)).toBe(nextStage(committed));
+  });
+
+  it("leaves a parked run parked when appended after PARKED", () => {
+    // AC11 — the same guarantee the `tier:` lines carry.
+    const ledger = build(
+      "started (phase 1)", "design approved",
+      "worktree: .claude/worktrees/x (branch x)",
+      "PARKED — spec agent could not resolve the design",
+      "spec written → /repo/.superpowers/autopilot/x/spec.md",
+    );
+    expect(nextStage(ledger)).toBe("parked");
+  });
+});

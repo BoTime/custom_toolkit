@@ -545,13 +545,13 @@ describe("the sdd review-depth gate", () => {
   });
 });
 
-// The one block in this file that does touch the filesystem: AC5 pins the
-// untiered dispatch's actual bytes, which only the real fragments can carry.
+// The one block in this file that does touch the filesystem: it pins the
+// untiered dispatch's assembly, which only the real fragments can carry.
 describe("the untiered plan dispatch", () => {
-  it("is byte-identical to the pre-tier assembly", () => {
-    // AC5. Rebuilds what the pre-tier compose() produced, from the same
-    // primitives, rather than restating the new selection logic — so this
-    // pins bytes and not the implementation that emits them.
+  it("selects, orders and joins exactly body + writing-plans + budget + learnings", () => {
+    // AC4. Rebuilds what compose() must produce from the same primitives,
+    // rather than restating the selection logic — so this pins the assembly
+    // and not the implementation that emits it.
     const config = defaultConfig();
     const values = dummyValues("plan");
     const role = config.roles.plan;
@@ -566,11 +566,237 @@ describe("the untiered plan dispatch", () => {
           "---",
         ].join("\n"),
         render(readFragment("plan-body.md"), values),
+        render(readFragment("plan-writing-plans.md"), values),
         readFragment("plan-budget.md"),
         readFragment("plan-learnings.md"),
       ]
         .map((p) => p.replace(/\s+$/, ""))
         .join("\n\n") + "\n";
     expect(composeStage("plan")).toBe(expected);
+  });
+});
+
+describe("the spec tier gate", () => {
+  const composeSpec = (values) =>
+    compose({
+      stage: "spec",
+      config: makeConfig(),
+      values: {
+        run: "r", worktree: "/w", branch: "b", spec_path: "s",
+        design: "d", criteria_source: "c", ...values,
+      },
+      fragmentReader: fakeFragments({
+        "spec-body.md": "{{run}}{{worktree}}{{branch}}{{spec_path}}{{design}}{{criteria_source}}",
+      }),
+      worktreeHas: () => false,
+    });
+
+  it("emits the commit fragment on the default, standard and large paths", () => {
+    // AC1 — the untiered path and the two untouched tiers select one shape.
+    for (const values of [{}, { tier: "standard" }, { tier: "large" }]) {
+      const out = composeSpec(values);
+      expect(out).toContain("FRAGMENT(spec-commit.md)");
+      expect(out).not.toContain("FRAGMENT(spec-small.md)");
+      expect(out).toContain("FRAGMENT(spec-criteria.md)");
+    }
+  });
+
+  it("swaps in the small fragment on small, keeping the criteria contract", () => {
+    // AC2
+    const out = composeSpec({ tier: "small" });
+    expect(out).toContain("FRAGMENT(spec-small.md)");
+    expect(out).not.toContain("FRAGMENT(spec-commit.md)");
+    expect(out).toContain("FRAGMENT(spec-criteria.md)");
+  });
+
+  it("rejects an unrecognised tier, naming the flag and all three values", () => {
+    // AC3
+    expect(() => composeSpec({ tier: "medium" })).toThrow(/--tier/);
+    expect(() => composeSpec({ tier: "medium" })).toThrow(/small/);
+    expect(() => composeSpec({ tier: "medium" })).toThrow(/standard/);
+    expect(() => composeSpec({ tier: "medium" })).toThrow(/large/);
+  });
+});
+
+describe("the pr tier gate", () => {
+  const composePr = (values, bodies = { "pr-body.md": "{{run}}{{worktree}}" }) =>
+    compose({
+      stage: "pr",
+      config: makeConfig(),
+      values: { run: "r", worktree: "/w", ...values },
+      fragmentReader: fakeFragments(bodies),
+      worktreeHas: () => false,
+    });
+
+  it("adds nothing on the default, standard and large paths", () => {
+    // AC8
+    for (const values of [{}, { tier: "standard" }, { tier: "large" }]) {
+      expect(composePr(values)).not.toContain("FRAGMENT(pr-small.md)");
+    }
+  });
+
+  it("emits pr-small.md on small", () => {
+    // AC8. No `spec_path` here: the marker this fake reader returns for
+    // `pr-small.md` declares no placeholder, so passing the flag would trip
+    // the unconsumed-flag guard the next two cases are about.
+    expect(composePr({ tier: "small" })).toContain("FRAGMENT(pr-small.md)");
+  });
+
+  it("requires --spec-path on small, through the ordinary placeholder error", () => {
+    // The fragment is what consumes it, so the fragment is what makes it
+    // required. No bespoke error, and no literal {{spec_path}} shipped.
+    const bodies = {
+      "pr-body.md": "{{run}}{{worktree}}",
+      "pr-small.md": "read {{spec_path}}",
+    };
+    expect(() => composePr({ tier: "small" }, bodies)).toThrow(/spec_path/);
+    expect(() => composePr({ tier: "small" }, bodies)).toThrow(/--spec-path/);
+    expect(composePr({ tier: "small", spec_path: "/run/spec.md" }, bodies))
+      .toContain("read /run/spec.md");
+  });
+
+  it("still rejects --spec-path when the tier is absent or not small", () => {
+    // AC9 — a fragment consumes it only on small; everywhere else it is a
+    // typo whose value would never reach the agent.
+    expect(() => composePr({ spec_path: "/run/spec.md" })).toThrow(/--spec-path/);
+    expect(() => composePr({ tier: "large", spec_path: "/run/spec.md" }))
+      .toThrow(/--spec-path/);
+  });
+
+  it("rejects an unrecognised tier on pr too", () => {
+    // AC3's sibling: the same message, from the same helper.
+    expect(() => composePr({ tier: "medium" })).toThrow(/--tier/);
+    expect(() => composePr({ tier: "medium" })).toThrow(/standard/);
+  });
+});
+
+// Touches the real files: the sentence-preservation half of the plan's
+// byte-identity ruling, which only the real fragments can carry.
+describe("the default spec dispatch", () => {
+  const values = dummyValues("spec");
+
+  it("selects, orders and joins exactly body + spec-commit + spec-criteria", () => {
+    const config = defaultConfig();
+    const role = config.roles.spec;
+    const expected =
+      [
+        [
+          "---",
+          "name: autopilot-spec",
+          "description: spec stage of an autopilot run",
+          `model: ${role.model}`,
+          `effort: ${role.effort}`,
+          "---",
+        ].join("\n"),
+        render(readFragment("spec-body.md"), values),
+        render(readFragment("spec-commit.md"), values),
+        readFragment("spec-criteria.md"),
+      ]
+        .map((p) => p.replace(/\s+$/, ""))
+        .join("\n\n") + "\n";
+    expect(composeStage("spec")).toBe(expected);
+  });
+
+  it("keeps every commit sentence on the default path and drops all of them on small", () => {
+    // AC2. The negative half would pass trivially on its own, so the same
+    // literals are asserted present on the default path first.
+    const dflt = composeStage("spec");
+    const small = composeStage("spec", { extraValues: { tier: "small" } });
+    const moved = render(readFragment("spec-commit.md"), values).replace(/\s+$/, "");
+
+    expect(dflt).toContain(moved);
+    expect(dflt).toContain("commit it");
+    expect(dflt).toContain("first commit");
+
+    expect(small).not.toContain(moved);
+    expect(small).not.toContain("commit it");
+    expect(small).not.toContain("first commit");
+    expect(small).toContain(readFragment("spec-criteria.md").replace(/\s+$/, ""));
+  });
+});
+
+describe("the plan document-shape gate", () => {
+  const composePlan = (values) =>
+    compose({
+      stage: "plan",
+      config: makeConfig(),
+      values: { run: "r", worktree: "/w", spec_path: "s", plan_path: "p", ...values },
+      fragmentReader: fakeFragments({
+        "plan-body.md": "{{run}}{{worktree}}{{spec_path}}{{plan_path}}",
+      }),
+      worktreeHas: () => false,
+    });
+
+  it("carries the writing-plans fragment on default, standard and large", () => {
+    // AC4
+    for (const values of [{}, { tier: "standard" }, { tier: "large" }]) {
+      const out = composePlan(values);
+      expect(out).toContain("FRAGMENT(plan-writing-plans.md)");
+      expect(out).not.toContain("FRAGMENT(plan-inline-small.md)");
+    }
+  });
+
+  it("swaps in the inline shape on small", () => {
+    // AC5
+    const out = composePlan({ tier: "small" });
+    expect(out).toContain("FRAGMENT(plan-inline-small.md)");
+    expect(out).not.toContain("FRAGMENT(plan-writing-plans.md)");
+  });
+
+  it("puts the document shape ahead of the task-count budget", () => {
+    const out = composePlan({ tier: "small" });
+    expect(out.indexOf("FRAGMENT(plan-inline-small.md)"))
+      .toBeLessThan(out.indexOf("plan-budget-small"));
+  });
+
+  it("requires --plan-path on every tier", () => {
+    // AC7
+    for (const tier of [undefined, "small", "standard", "large"]) {
+      const values = { run: "r", worktree: "/w", spec_path: "s" };
+      if (tier) values.tier = tier;
+      const call = () =>
+        compose({
+          stage: "plan", config: makeConfig(), values,
+          fragmentReader: fakeFragments({
+            "plan-body.md": "{{run}}{{worktree}}{{spec_path}}{{plan_path}}",
+          }),
+          worktreeHas: () => false,
+        });
+      expect(call).toThrow(/\{\{plan_path\}\}/);
+      expect(call).toThrow(/--plan-path/);
+    }
+  });
+});
+
+// Touches the real files.
+describe("the small plan dispatch", () => {
+  const small = () => composeStage("plan", { extraValues: { tier: "small" } });
+
+  it("never names writing-plans", () => {
+    // AC5 — the point of the inline shape is that no planning sub-skill runs.
+    expect(small()).not.toContain("superpowers:writing-plans");
+    expect(small()).not.toContain("writing-plans");
+  });
+
+  it("states the one-step escalation to standard and its return-line form", () => {
+    // AC6. Whitespace-tolerant where the fragment may wrap: the assertion is
+    // about the sentence reaching the agent, not about the column it breaks at.
+    const out = small();
+    expect(out).toMatch(/escalat/i);
+    expect(out).toMatch(/tier\s+`standard`/);
+    expect(out).toContain("escalated to standard: <reason>");
+    expect(out).toContain("## Escalation");
+    expect(out).toMatch(/at most once|never moves more than one step/i);
+  });
+
+  it("keeps the writing-plans text in the default dispatch and out of the small one", () => {
+    // Both directions, so neither half passes trivially.
+    const values = dummyValues("plan");
+    const moved = render(readFragment("plan-writing-plans.md"), values).replace(/\s+$/, "");
+    expect(composeStage("plan")).toContain(moved);
+    expect(small()).not.toContain(moved);
+    expect(small()).toContain(
+      render(readFragment("plan-inline-small.md"), values).replace(/\s+$/, ""),
+    );
   });
 });

@@ -37,6 +37,13 @@ decided it could not proceed. A run parked on red tests would otherwise retry
 landing and open a pull request on a failing branch, which is the one outcome
 the park exists to prevent.
 
+## Untimestamped ledger lines (the ledger)
+
+`cat`/heredoc or the Write tool produce lines with no ISO timestamp.
+`parseLedger` skips them, so they are invisible to `nextStage` — a resumed run
+redoes completed stages — and the run's duration cannot be recovered. That is
+why every append goes through `autopilot-ledger.mjs`.
+
 ## Task-count budget (`plan`)
 
 Task count is the single largest driver of a run's wall-clock time. `sdd` is
@@ -55,12 +62,38 @@ Measured across real runs:
 Nothing else in the pipeline moves the total that far, which is why the budget
 belongs at the stage that sets the multiplier rather than anywhere later.
 
+The same composed definition carries a minimalism ladder when
+`minimalism.mode` is `lite` or `full`, and a learnings instruction when the
+worktree has `docs/autopilot/learnings.md` — the plan agent is the one
+consumer of the run's accumulated learnings, and every other stage is
+deliberately learnings-free. The script reads all three conditions from merged
+config and the worktree, which is why `SKILL.md` tells the orchestrator there
+is nothing to gate by hand.
+
 **Rule 3 is load-bearing in both directions.** A bare instruction to emit fewer
 tasks produces oversized tasks whose diffs defeat task review, converting a
 wall-clock saving into fix rounds that cost more than the tasks saved. And a
 range with a low end still reads as a number to reach, which produces tasks
 invented to fill it — a full dispatch cycle plus a review round spent on work
 no acceptance criterion asked for.
+
+## The `--tier` flag (`plan`)
+
+An unrecognised value is a compose-time error naming the three accepted values
+rather than a silent fallback, because a typo would otherwise produce a run
+whose ceremony nobody chose.
+
+## `--criteria-source` (`spec`)
+
+`/autopilot-github` seeds the acceptance criteria from the issue body and a
+plain `/autopilot` from the brainstorm's design. Either way the spec is where
+they land, which is what lets `plan` and `verify` both read one list.
+
+## Reaper flags (`setup`)
+
+`--dir` and `--base` are passed explicitly from config because a project that
+overrides either would otherwise have the reaper scanning the wrong directory
+and silently reaping nothing.
 
 ## Minimalism ladder (`plan`) and minimalism contract (`sdd`)
 
@@ -160,6 +193,11 @@ while the implementation context is still fresh. And `learnings` now runs
 evidence a run produces about whether the spec described the feature
 correctly, which previously arrived too late to be distilled at all.
 
+## A backend repo pays nothing for `verify`
+
+It writes no `(ui)` criteria, so the stage skips and never speaks. That is what
+makes the whole stage free to leave switched on by default.
+
 ## Browser verification contract (`verify`)
 
 Rules 3 through 5 — never read a full-page DOM or accessibility dump, never
@@ -180,6 +218,13 @@ whose green result nobody can reproduce.
 The `--round=2` flag is not bookkeeping. Without it, a criterion still red
 writes a second finding identical to the first, and the findings clustering
 reads one twice-failing criterion as two.
+
+## The test run after the rebase (`land`)
+
+It is not optional because semantic conflicts rebase cleanly and still break
+the branch: task A renames a function, task B adds a caller of the old name in
+a file A never touched, git reports nothing, and the branch is broken. The
+suite is the only thing that catches this.
 
 ## The recipe
 
@@ -207,6 +252,9 @@ Two reasons, both structural:
 2. It must survive the worktree — the reaper deletes worktrees after merge, and
    a ledger inside one destroys the record of every completed run, including
    the PR URL that `nextStage` returns `done` on.
+
+`findings.jsonl` inherits the placement for the same two reasons, which is why
+`SKILL.md` states the location without restating the argument.
 
 The harness constraint that forces Bash appends (a worktree-isolated session
 cannot Write or Edit files in the main checkout, though `>>` and reads work) is

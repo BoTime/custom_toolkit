@@ -25,14 +25,20 @@ export function parseLedger(contents) {
 }
 
 /**
- * Entries that record something about the run without advancing it.
+ * Entries the park check must not read as the run's last word.
  *
- * `nextStage` detects a park by reading the LAST entry, so an informational
- * line appended after a `PARKED` line would unpark the run — a parked branch
- * would silently resume into the stage that parked it. Anything appended
- * purely for the record belongs here, `session:` measurements included.
+ * `nextStage` detects a park by reading the LAST entry, so a line appended
+ * after a `PARKED` line would unpark the run — a parked branch would silently
+ * resume into the stage that parked it. Anything appended purely for the
+ * record belongs here, `session:` measurements included.
+ *
+ * `spec written` is the exception that is not merely informational: it is a
+ * pipeline entry, and `nextStage` transitions to `plan` on it exactly as it
+ * does on `spec committed`. It is listed here only so that a `small` run's
+ * spec entry arriving after a park cannot resume the run — the same guarantee
+ * the `tier:` lines carry.
  */
-const INFORMATIONAL = /^(tier(:| escalated:)|session:)/;
+const NOT_LAST_WORD = /^(tier(:| escalated:)|session:|spec written)/;
 
 /**
  * `session:` entries record how large a session had grown when it finished a
@@ -59,11 +65,12 @@ export function nextStage(ledger) {
   const has = (prefix) => entries.some((e) => e.text.startsWith(prefix));
 
   // Check if the last stage-advancing entry is a PARKED line (currently
-  // parked, not historical). Informational entries — `tier` lines and
-  // `session` measurements alike — are skipped: they may legitimately land
-  // after a park, and treating one as the last entry would silently resume a
-  // run past the decision its human partner was asked to make.
-  const advancing = ledger.entries.filter((e) => !INFORMATIONAL.test(e.text));
+  // parked, not historical). Entries that must not count as the run's last
+  // word — `tier` lines, `session` measurements and `spec written` alike —
+  // are skipped: they may legitimately land after a park, and treating one as
+  // the last entry would silently resume a run past the decision its human
+  // partner was asked to make.
+  const advancing = ledger.entries.filter((e) => !NOT_LAST_WORD.test(e.text));
   if (advancing.length > 0) {
     const lastEntry = advancing[advancing.length - 1];
     if (lastEntry.text.startsWith("PARKED")) return "parked";
@@ -78,7 +85,10 @@ export function nextStage(ledger) {
   if (has("verify")) return "learnings";
   if (has("sdd complete")) return "verify";
   if (has("plan complete")) return "sdd";
-  if (has("spec committed")) return "plan";
+  // `spec written` is the `small` tier's entry: the spec is a scratch document
+  // in the run directory and is never committed. Both mean the same thing to
+  // the pipeline — the spec exists, plan next.
+  if (has("spec committed") || has("spec written")) return "plan";
   if (has("worktree:")) return "spec";
   if (has("design approved")) return "setup";
   return "phase1";

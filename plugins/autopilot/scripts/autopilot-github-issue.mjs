@@ -9,9 +9,10 @@ import { loadConfig, validateGithubConfig } from "./autopilot-config.mjs";
  *
  * Exported so the wrapper's prose guard test and the ledger-coupling test share
  * one source of truth. Every line is `github: `-prefixed, which collides with
- * none of nextStage's nine resume prefixes (`pr:`, `rebase clean`,
+ * none of nextStage's ten resume prefixes (`pr:`, `rebase clean`,
  * `learnings committed`, `verify`, `sdd complete`, `plan complete`,
- * `spec committed`, `worktree:`, `design approved`) nor with `PARKED`.
+ * `spec committed`, `spec written`, `worktree:`, `design approved`) nor with
+ * `PARKED`.
  *
  * `verify` is the near miss to keep in mind when adding a line here: the
  * `github: ` prefix is what keeps `github: verify screenshots posted` from

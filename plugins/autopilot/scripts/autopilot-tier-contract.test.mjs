@@ -172,6 +172,24 @@ describe("the orchestrator's tier handling", () => {
   it("keys review depth to the count the plan wrote, not the declared tier", () => {
     expect(skill).toMatch(/not the tier the brainstorm declared/);
   });
+
+  it("routes the small tier's spec, plan and pr dispatches to the run directory", () => {
+    // AC12
+    expect(skill).toContain("--tier=small");
+    expect(skill).toContain("--plan-path");
+    expect(skill).toMatch(/--spec-path=<absolute run dir>\/spec\.md/);
+    expect(skill).toMatch(/<absolute run dir>\/plan\.md/);
+  });
+
+  it("names the small tier's ledger entry", () => {
+    // AC12
+    expect(skill).toContain("spec written → <path>");
+  });
+
+  it("says an escalation on small keeps the scratch documents", () => {
+    // AC12 — the one thing a resumed run must not do is promote or recommit.
+    expect(skill).toMatch(/nothing is promoted,\s+rerun or committed/);
+  });
 });
 
 describe("the README's tier documentation", () => {
@@ -188,6 +206,13 @@ describe("the README's tier documentation", () => {
     // AC16 — the one thing a reader must not conclude is that a small tier
     // skips documents.
     expect(readme).toMatch(/`spec` and `plan` run on\nevery tier/);
+  });
+
+  it("says small keeps its spec and plan in the run directory, uncommitted", () => {
+    // AC13
+    expect(readme).toMatch(/short spec and a short single-task plan in the\s+run directory/);
+    expect(readme).toMatch(/uncommitted and gitignored/);
+    expect(readme).toMatch(/`standard` and `large` commit a\s+full spec/);
   });
 
   it("documents the tiers config block", () => {

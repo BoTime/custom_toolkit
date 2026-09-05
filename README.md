@@ -97,9 +97,10 @@ that override in `.codex/autopilot.json`.
 #### Ceremony tiers
 
 Phase 1 classifies the work into one of three tiers, and states it in the same
-message as the approaches so you can override it there. A tier binds one
-thing: **how far the `plan` stage may decompose the work**, and — at a single
-task — whether the run needs two reviews or one.
+message as the approaches so you can override it there. A tier binds three
+things: **how far the `plan` stage may decompose the work**; whether — at a
+single task — the run needs two reviews or one; and, on `small` only, the
+shape and location of the run's spec and plan.
 
 | Tier | The work is | Plan ceiling | Escalates to |
 |---|---|---|---|
@@ -107,11 +108,19 @@ task — whether the run needs two reviews or one.
 | `standard` | more than one reviewable diff, not spanning separate subsystems | 3 tasks | `large`, once |
 | `large` | genuinely spanning separate subsystems | 5 tasks | — |
 
-**A tier never decides which documents get written.** `spec` and `plan` run on
-every tier without exception. Across this repository's findings corpus, 36 of
-39 review findings — and every major one — were defects in the spec or the
-plan, caught in prose before they became code. The document that catches them
-is not the ceremony worth cutting; decomposition is.
+**A tier never decides whether a document gets written.** `spec` and `plan` run on
+every tier without exception. What `small` changes is where they land and how long
+they are: a short spec and a short single-task plan in the
+run directory, uncommitted and gitignored, while `standard` and `large` commit a
+full spec to `docs/superpowers/specs/` and a full plan to
+`docs/superpowers/plans/` exactly as before. The `pr` stage carries a `small`
+run's design paragraph and acceptance criteria into the pull request
+description, which is where they survive.
+
+Across this repository's findings corpus, 36 of 39 review findings — and every
+major one — were defects in the spec or the plan, caught in prose before they
+became code. The document that catches them is not the ceremony worth cutting;
+decomposition is.
 
 A plan that finds its tier too tight escalates one step on its own, opens with
 an `## Escalation` heading naming the reason, and the run records

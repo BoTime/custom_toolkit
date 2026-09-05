@@ -14,6 +14,7 @@ import {
   STAGES,
   ROLE_TABLE_ROLES,
   compose,
+  render,
   roleTable,
   placeholdersIn,
   readFragment,
@@ -32,6 +33,13 @@ const stageNames = Object.keys(STAGES);
 
 /** The fragment text as `compose` embeds it — trailing whitespace stripped. */
 const fragmentBody = (rel) => readFragment(rel).replace(/\s+$/, "");
+
+/** A declared fragment's text, in each of the three forms `fragments()` returns. */
+const resolveFragment = (fragment, stage) => {
+  if (typeof fragment === "string") return fragmentBody(fragment);
+  if (fragment.file) return render(readFragment(fragment.file), dummyValues(stage));
+  return fragment.text;
+};
 
 describe("every stage composes a valid subagent definition", () => {
   it.each(stageNames)("%s carries the role's configured model and effort", (stage) => {
@@ -59,7 +67,7 @@ describe("every stage composes a valid subagent definition", () => {
     // every run, and one losing a placeholder would silently drop a value.
     const EXPECTED = {
       spec: ["run", "worktree", "branch", "spec_path", "design", "criteria_source"],
-      plan: ["run", "worktree", "spec_path"],
+      plan: ["run", "worktree", "spec_path", "plan_path"],
       sdd: ["run", "worktree", "plan_path"],
       verify: ["run", "worktree", "spec_path", "verify_dir"],
       "verify-fix": ["run", "worktree", "failing_criteria", "failures"],
@@ -85,9 +93,12 @@ describe("each stage carries its declared fragments, in order", () => {
 
     let cursor = out.indexOf("\n---\n") + 5; // past the frontmatter
     for (const fragment of declared) {
-      const text = typeof fragment === "string" ? fragmentBody(fragment) : fragment.text;
+      const text = resolveFragment(fragment, stage);
       const at = out.indexOf(text, cursor);
-      expect(at, `${stage}: ${typeof fragment === "string" ? fragment : "rendered role table"} missing or out of order`).toBeGreaterThan(-1);
+      const name = typeof fragment === "string"
+        ? fragment
+        : fragment.file ?? "rendered role table";
+      expect(at, `${stage}: ${name} missing or out of order`).toBeGreaterThan(-1);
       cursor = at + text.length;
     }
   });
@@ -210,7 +221,7 @@ describe("every ledger prefix nextStage matches still appears in SKILL.md", () =
   const prefixes = [...source.matchAll(/has\("([^"]+)"\)/g)].map((m) => m[1]);
 
   it("finds the ten prefixes in nextStage's source", () => {
-    expect(prefixes).toHaveLength(9); // `started (phase 1)` is the `return "phase1"` default
+    expect(prefixes).toHaveLength(10); // `started (phase 1)` is the `return "phase1"` default
     expect(prefixes).toContain("sdd complete");
     expect(prefixes).toContain("learnings committed");
   });
@@ -221,7 +232,7 @@ describe("every ledger prefix nextStage matches still appears in SKILL.md", () =
 
   it.each([
     "pr:", "rebase clean", "learnings committed", "sdd complete",
-    "plan complete", "spec committed", "worktree:", "design approved",
+    "plan complete", "spec committed", "spec written", "worktree:", "design approved",
   ])("%s appears verbatim", (prefix) => {
     expect(skill).toContain(prefix);
   });

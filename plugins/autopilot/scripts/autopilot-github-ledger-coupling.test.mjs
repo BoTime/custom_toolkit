@@ -23,10 +23,11 @@ import { GITHUB_LEDGER_LINES } from "./autopilot-github-issue.mjs";
 
 const HEADER = "# autopilot run — task: GitHub issue #42: CSV export drops unicode";
 
-// The nine prefixes nextStage resumes on, plus the park marker.
+// The ten prefixes nextStage resumes on, plus the park marker.
 const RESUME_PREFIXES = [
   "pr:", "rebase clean", "learnings committed", "verify", "sdd complete",
-  "plan complete", "spec committed", "worktree:", "design approved", "PARKED",
+  "plan complete", "spec committed", "spec written", "worktree:",
+  "design approved", "PARKED",
 ];
 
 // autopilot's own nine entries, in pipeline order, with the stage nextStage
