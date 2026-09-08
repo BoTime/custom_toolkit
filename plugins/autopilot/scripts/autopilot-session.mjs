@@ -161,6 +161,26 @@ export function capsFrom(config) {
   return { ...DEFAULT_CAPS, ...(config?.session ?? {}) };
 }
 
+/**
+ * What crossing the cap means for the controller.
+ *
+ * `handoff` (the default) is the cost lever described above: stop at the
+ * stage boundary and let a fresh session resume. `continue` records the
+ * measurement but never asks the controller to stop — for runs where nobody
+ * is at the terminal to type `/autopilot resume`, where a handoff is not a
+ * saving but a stall until a human returns. The measurement is still written
+ * to the ledger either way, so `check` can still show how large the sessions
+ * got; under `continue` it reports rather than fails.
+ *
+ * Note that the measurement is the *whole* session, Phase 1 included. A long
+ * interactive brainstorm — mockups, screenshots, a visual companion — can put
+ * a session over the context cap before Phase 2 has done any work at all, and
+ * under `handoff` that stops the run after its first automated stage.
+ */
+export function onCapPolicy(caps) {
+  return caps?.on_cap === "continue" ? "continue" : "handoff";
+}
+
 function flag(argv, name, fallback) {
   const hit = argv.find((a) => a.startsWith(`--${name}=`));
   return hit === undefined ? fallback : hit.slice(name.length + 3);
@@ -209,6 +229,14 @@ export function main(argv = process.argv.slice(2), env = process.env, deps = {})
       log("every recorded session stayed under cap");
       return 0;
     }
+    if (onCapPolicy(caps) === "continue") {
+      // The project chose to keep running over cap; the sizes are information
+      // for the developer, not a missed handoff.
+      for (const v of violations) {
+        log(`over cap at ${v.stage} (continued by session.on_cap): ${v.over.join(", ")}`);
+      }
+      return 0;
+    }
     for (const v of violations) {
       logError(`over cap at ${v.stage}: ${v.over.join(", ")}`);
     }
@@ -234,7 +262,8 @@ export function main(argv = process.argv.slice(2), env = process.env, deps = {})
 
   const measurement = measure(readFile(transcript));
   const over = exceeded(measurement, caps);
-  const result = { ...measurement, handoff: over.length > 0, over };
+  const handoff = over.length > 0 && onCapPolicy(caps) === "handoff";
+  const result = { ...measurement, handoff, over };
 
   if (command === "record") {
     const [path, stage] = rest.filter((a) => !a.startsWith("--"));

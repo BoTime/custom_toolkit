@@ -355,3 +355,24 @@ cannot prevent an over-long session, but it makes the choice visible after the
 fact. It reports rather than parks because by then the work is already pushed,
 and the finding is about how the run was executed, not whether its output is
 sound.
+
+**Why `on_cap` exists.** The measurement is the whole session, Phase 1
+included, because every turn re-reads all of it — the brainstorm's context
+costs exactly as much as the pipeline's. That has a consequence the tables
+above do not show: a long interactive brainstorm (mockups in the visual
+companion, screenshots, several rounds of options) can put a session over the
+context cap before Phase 2 has done any work, and the run then hands off right
+after its first automated stage. On the theme-palette run (2026-09-04) the
+brainstorm alone reached ~185k and the session crossed the 200k cap after
+`sdd`, with verify, learnings, land and pr still to go.
+
+For a developer at the terminal that is still the right trade: typing `resume`
+costs seconds and the successor starts in the 8k column. For an unattended
+run — a background job, a scheduled run, a session driven from a phone — there
+is nobody to type it, and a handoff is not a 30% saving but a stall until a
+human returns, which costs far more than the cache-read it avoided.
+`session.on_cap: continue` is that call made explicit in config: `record`
+keeps writing the measurement (so `check` still shows how large the sessions
+got) but never asks the controller to stop. The default stays `handoff`
+because the cost argument holds whenever a human is present, and a project
+that runs autopilot unattended knows it does.

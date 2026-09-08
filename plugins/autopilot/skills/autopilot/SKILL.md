@@ -327,7 +327,11 @@ Check at a stage boundary only, never mid-stage: a session that stops halfway
 through `sdd` hands its successor no way to pick up, and the stage is redone.
 
 Caps live under `session` in `.claude/autopilot.json` (`max_turns`,
-`max_context_tokens`), layered over the plugin defaults.
+`max_context_tokens`, `on_cap`), layered over the plugin defaults. The
+measurement covers the whole session, Phase 1 included. `on_cap: continue`
+makes `record` never ask for a handoff — for unattended runs, where a stop is a
+stall until someone types `resume`. Obey the `handoff` field; never read the
+policy yourself.
 
 ### `setup`
 

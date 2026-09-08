@@ -8,6 +8,7 @@ import {
   parseSessionEntry,
   checkSessions,
   capsFrom,
+  onCapPolicy,
   main,
 } from "./autopilot-session.mjs";
 import { parseLedger } from "./autopilot-ledger.mjs";
@@ -258,6 +259,59 @@ describe("main", () => {
 
     expect(code).toBe(1);
     expect(logError.mock.calls[0][0]).toContain("over cap at sdd");
+  });
+
+  describe("session.on_cap: continue", () => {
+    const continuing = {
+      ...base,
+      load: () => ({ config: { session: { on_cap: "continue" } } }),
+    };
+
+    it("defaults the policy to handoff", () => {
+      expect(onCapPolicy(DEFAULT_CAPS)).toBe("handoff");
+      expect(onCapPolicy({ ...DEFAULT_CAPS, on_cap: "continue" })).toBe("continue");
+    });
+
+    it("measure still names the caps it is over but never asks to hand off", () => {
+      const log = vi.fn();
+      const code = main(["measure"], env, { ...continuing, log });
+
+      expect(code).toBe(0);
+      expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+        turns: 2,
+        ctx: 200000,
+        handoff: false,
+        over: ["ctx 200000 > 150000"],
+      });
+    });
+
+    it("record still writes the measurement to the ledger", () => {
+      const appendLedger = vi.fn();
+      main(["record", "run.md", "sdd"], env, { ...continuing, log: vi.fn(), appendLedger });
+
+      expect(appendLedger).toHaveBeenCalledWith(
+        "run.md",
+        "session: sdd — 2 turns, 200000 ctx",
+      );
+    });
+
+    it("check reports over-cap stages without failing", () => {
+      const log = vi.fn();
+      const logError = vi.fn();
+      const code = main(["check", "run.md"], env, {
+        ...continuing,
+        log,
+        logError,
+        readLedgerAt: () =>
+          parseLedger(
+            "# autopilot run — task: x\n2026-07-29T14:00:00Z  session: sdd — 300 turns, 400000 ctx",
+          ),
+      });
+
+      expect(code).toBe(0);
+      expect(logError).not.toHaveBeenCalled();
+      expect(log.mock.calls[0][0]).toContain("over cap at sdd (continued by session.on_cap)");
+    });
   });
 
   it("check exits 0 for a run that handed off", () => {

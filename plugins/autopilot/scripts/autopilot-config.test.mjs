@@ -868,6 +868,31 @@ describe("session config", () => {
     );
     expect(result.ok).toBe(true);
   });
+
+  it("accepts on_cap continue and handoff", () => {
+    for (const on_cap of ["continue", "handoff"]) {
+      const result = validateConfig({ ...validConfig(), session: { on_cap } }, {});
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("rejects an unknown on_cap policy", () => {
+    const result = validateConfig(
+      { ...validConfig(), session: { on_cap: "park" } },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toMatch(/session\.on_cap: must be one of handoff, continue/);
+  });
+
+  it("carries on_cap through the merge alongside the caps", () => {
+    const merged = mergeConfig(withSession(), { session: { on_cap: "continue" } });
+    expect(merged.session).toEqual({
+      max_turns: 120,
+      max_context_tokens: 150000,
+      on_cap: "continue",
+    });
+  });
 });
 
 describe("scaffoldConfig", () => {
