@@ -383,6 +383,51 @@ describe("loadConfig", () => {
     expect(() => loadConfig(PROJECT, {}, readFile, DEFAULTS, { host: "cursor" }))
       .toThrow(/unknown host/i);
   });
+
+  it("warns when the project config is still at the legacy Claude path", () => {
+    const LEGACY = ".claude/autopilot.json";
+    const readFile = reader({
+      [DEFAULTS]: JSON.stringify(validConfig()),
+      [LEGACY]: JSON.stringify({ test_command: "npm test" }),
+    });
+    const { warnings } = loadConfig(LEGACY, {}, readFile, DEFAULTS);
+    expect(warnings).toContain(
+      ".claude/autopilot.json is the old project config location — move it to " +
+        ".superpowers/autopilot/configs/autopilot.json and commit it",
+    );
+  });
+
+  it("warns when the project config is still at the legacy Codex path", () => {
+    const LEGACY = ".codex/autopilot.json";
+    const readFile = reader({
+      [CODEX_DEFAULTS]: JSON.stringify(validConfig()),
+      [LEGACY]: JSON.stringify({ test_command: "npm test" }),
+    });
+    const { warnings } = loadConfig(LEGACY, {}, readFile, undefined, { host: "codex" });
+    expect(warnings).toContain(
+      ".codex/autopilot.json is the old project config location — move it to " +
+        ".superpowers/autopilot/configs/autopilot.codex.json and commit it",
+    );
+  });
+
+  it("does not warn about the location when the config is at the new path", () => {
+    const NEW = ".superpowers/autopilot/configs/autopilot.json";
+    const readFile = reader({
+      [DEFAULTS]: JSON.stringify(validConfig()),
+      [NEW]: JSON.stringify({ test_command: "npm test" }),
+    });
+    const { warnings } = loadConfig(NEW, {}, readFile, DEFAULTS);
+    expect(warnings.join("\n")).not.toMatch(/old project config location/);
+  });
+
+  it("does not warn about the location when no project config was loaded", () => {
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
+    const { warnings, usedProjectConfig } = loadConfig(
+      ".claude/autopilot.json", {}, readFile, DEFAULTS,
+    );
+    expect(usedProjectConfig).toBe(false);
+    expect(warnings.join("\n")).not.toMatch(/old project config location/);
+  });
 });
 
 // The `github` block powers the autopilot-github wrapper only. Two properties

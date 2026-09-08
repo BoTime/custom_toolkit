@@ -1,8 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
+  HOSTS,
   hostConfigPath,
   hostDefaultsPath,
   hostEffortOverride,
+  legacyHostConfigPath,
 } from "./autopilot-host.mjs";
 
 export const ROLES = [
@@ -332,6 +334,21 @@ export function loadConfig(
     const source = project === undefined ? resolvedDefaultsPath : `${path} (merged over defaults)`;
     throw new Error(`${source} is invalid:\n  ${errors.join("\n  ")}`);
   }
+
+  // A deprecation, not a permanent second path: the fallback exists so a
+  // project that has not moved keeps working across one release. Matched with
+  // `===` against the bare relative literal, which is the only string
+  // `resolveConfigPath` ever hands back for a legacy config.
+  if (project !== undefined) {
+    const staleHost = HOSTS.find((h) => legacyHostConfigPath(h) === path);
+    if (staleHost) {
+      warnings.push(
+        `${path} is the old project config location — move it to ` +
+          `${hostConfigPath(staleHost)} and commit it`,
+      );
+    }
+  }
+
   return { config: merged, warnings, usedProjectConfig: project !== undefined };
 }
 
