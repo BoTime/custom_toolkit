@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseWorktrees, classify, planReap, resolveMainPath } from "./autopilot-reaper.mjs";
+import { parseWorktrees, classify, planReap } from "./autopilot-reaper.mjs";
 
 const PORCELAIN = `worktree /repo
 HEAD aaaa1111
@@ -142,17 +142,5 @@ describe("planReap", () => {
       mainPath: "/repo", worktreeDir: ".claude/worktrees",
     });
     expect(plan.reap).toEqual([]);
-  });
-});
-
-describe("resolveMainPath", () => {
-  it("resolves the primary checkout from a linked worktree's git-common-dir", () => {
-    const run = () => "/repo/.git/worktrees/autopilot-workflow";
-    expect(resolveMainPath(run)).toBe("/repo");
-  });
-
-  it("resolves the primary checkout from the primary checkout's own git-common-dir", () => {
-    const run = () => "/repo/.git";
-    expect(resolveMainPath(run)).toBe("/repo");
   });
 });

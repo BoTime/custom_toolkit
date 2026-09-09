@@ -29,7 +29,8 @@ function makeConfig(overrides = {}) {
   ]) {
     roles[role] = { model: `model-${role}`, effort: "high" };
   }
-  return { roles, worktree_dir: ".claude/worktrees", base_ref: "origin/main",
+  return { roles, worktree_dir: ".claude/worktrees", worktree_provider: "orca",
+    base_ref: "origin/main",
     reaper: true, findings_threshold: 2,
     tiers: { small: 1, standard: 3, large: 5 }, ...overrides };
 }

@@ -131,6 +131,7 @@ describe("a config with no artifacts block still validates", () => {
       ].map((r) => [r, { model: "opus", effort: "high" }]),
     ),
     worktree_dir: ".claude/worktrees",
+    worktree_provider: "orca",
     base_ref: "origin/main",
     reaper: true,
     findings_threshold: 2,

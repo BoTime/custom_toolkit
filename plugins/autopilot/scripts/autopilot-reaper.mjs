@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { resolve, dirname, basename } from "node:path";
+import { resolveMainPath } from "./autopilot-worktree.mjs";
 import { pathToFileURL } from "node:url";
 
 export function parseWorktrees(porcelain) {
@@ -60,14 +60,6 @@ export function planReap(worktrees, probe, opts) {
 
 function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
-}
-
-export function resolveMainPath(run) {
-  let dir = resolve(run().trim());
-  while (basename(dir) !== ".git" && dirname(dir) !== dir) {
-    dir = dirname(dir);
-  }
-  return dirname(dir);
 }
 
 export function probeWorktree(baseRef, mainPath) {
