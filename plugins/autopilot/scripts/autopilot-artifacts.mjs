@@ -51,8 +51,8 @@ export function resolveArtifactsConfig(config) {
     return {
       ok: false,
       reason:
-        "no `artifacts` block in .claude/autopilot.json — add env_file, " +
-        "bucket and public_base_url to publish screenshots",
+        "no `artifacts` block in .superpowers/autopilot/configs/autopilot.json — " +
+        "add env_file, bucket and public_base_url to publish screenshots",
     };
   }
   const missing = ARTIFACT_KEYS.filter((key) => blank(artifacts[key]));
@@ -87,9 +87,10 @@ export function parseEnvFile(text) {
  *
  * Naming the file reuses credentials that already exist in the consuming
  * project: nothing is copied, no new secret is created, and no secret ever
- * enters `.claude/autopilot.json`. `R2_BUCKET` in that same file names the
- * *application's* bucket and is deliberately not read — the artifacts bucket
- * comes from config, so test evidence never lands in production storage.
+ * enters `.superpowers/autopilot/configs/autopilot.json`. `R2_BUCKET` in that
+ * same file names the *application's* bucket and is deliberately not read —
+ * the artifacts bucket comes from config, so test evidence never lands in
+ * production storage.
  */
 export function readCredentials(envPath, readFile = (p) => readFileSync(p, "utf8")) {
   let text;

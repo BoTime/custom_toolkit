@@ -3,9 +3,15 @@ node_modules/
 *.log
 .superpowers/
 
-# Ignore .claude/ contents, but not the directory itself — git cannot unignore
-# a file inside an excluded directory, and autopilot.json must stay tracked.
+# Personal harness settings, not project files.
 .claude/*
-# Project config, not personal settings — autopilot's land stage needs it to
-# verify a branch, so it has to survive a fresh clone.
-!.claude/autopilot.json
+
+# autopilot keeps its project config under .superpowers/, which is otherwise
+# ignored. git cannot un-ignore a file inside an excluded directory, so each
+# parent is un-ignored before its contents are re-ignored. Runs stay ignored:
+# they are rederived every run and are per-machine.
+!.superpowers/
+.superpowers/*
+!.superpowers/autopilot/
+.superpowers/autopilot/*
+!.superpowers/autopilot/configs/

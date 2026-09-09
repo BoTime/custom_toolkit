@@ -1,11 +1,11 @@
 Rewrite this branch's `docs/autopilot/learnings.md`:
 
-1. Read this run's findings at `.superpowers/autopilot/<run>/findings.jsonl`
+1. Read this run's findings at `.superpowers/autopilot/runs/<run>/findings.jsonl`
    in the **main checkout** — via Bash, not Write/Edit. The file mixes both
    producers under one seven-field contract: `sdd`'s review findings and
    `verify`'s browser evidence, told apart by `stage_at_fault` and `pattern`,
    not by any producer tag.
-2. Read the accumulated corpus across `.superpowers/autopilot/*/findings.jsonl`
+2. Read the accumulated corpus across `.superpowers/autopilot/runs/*/findings.jsonl`
    the same way.
 3. Read the existing `docs/autopilot/learnings.md` on the branch, if present.
 4. Rewrite the doc — **condensed and bounded, not endlessly appended** —

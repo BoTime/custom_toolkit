@@ -225,7 +225,7 @@ describe("outputPath", () => {
   it("keys the file by stage, so the four implement stages do not collide", () => {
     const paths = ["sdd", "verify-fix", "land-conflict", "pr"].map((s) => outputPath("r1", s));
     expect(new Set(paths).size).toBe(4);
-    expect(paths[0]).toBe(".superpowers/autopilot/r1/agents/sdd.md");
+    expect(paths[0]).toBe(".superpowers/autopilot/runs/r1/agents/sdd.md");
   });
 });
 
@@ -260,9 +260,9 @@ describe("main", () => {
     const t = io();
     const code = main(["pr", "--run=r1", "--worktree=/w"], t.deps);
     expect(code).toBe(0);
-    expect(t.out).toEqual([".superpowers/autopilot/r1/agents/pr.md"]);
+    expect(t.out).toEqual([".superpowers/autopilot/runs/r1/agents/pr.md"]);
     expect(t.written).toHaveLength(1);
-    expect(t.written[0].path).toBe(".superpowers/autopilot/r1/agents/pr.md");
+    expect(t.written[0].path).toBe(".superpowers/autopilot/runs/r1/agents/pr.md");
     expect(t.written[0].text).toContain("name: autopilot-implement");
   });
 
@@ -274,7 +274,7 @@ describe("main", () => {
     expect(main(["pr", "--host=claude", "--run=r1", "--worktree=/w"], explicit.deps)).toBe(0);
 
     expect(explicit.written).toEqual(implicit.written);
-    expect(explicit.written[0].path).toBe(".superpowers/autopilot/r1/agents/pr.md");
+    expect(explicit.written[0].path).toBe(".superpowers/autopilot/runs/r1/agents/pr.md");
     expect(explicit.written[0].text).toBe([
       "---",
       "name: autopilot-implement",
@@ -297,9 +297,9 @@ describe("main", () => {
     });
 
     expect(main(["pr", "--host=codex", "--run=r1", "--worktree=/w"], t.deps)).toBe(0);
-    expect(t.out).toEqual([".superpowers/autopilot/r1/agents/pr.json"]);
+    expect(t.out).toEqual([".superpowers/autopilot/runs/r1/agents/pr.json"]);
     expect(t.written).toHaveLength(1);
-    expect(t.written[0].path).toBe(".superpowers/autopilot/r1/agents/pr.json");
+    expect(t.written[0].path).toBe(".superpowers/autopilot/runs/r1/agents/pr.json");
     expect(JSON.parse(t.written[0].text)).toEqual({
       role: "implement",
       model: "model-implement",

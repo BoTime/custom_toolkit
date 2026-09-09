@@ -1,7 +1,7 @@
 /**
  * The brainstorm-question corpus: one JSON object per line, appended once at
- * the Phase 1 handoff to `.superpowers/autopilot/<run>/questions.jsonl` in the
- * main checkout.
+ * the Phase 1 handoff to `.superpowers/autopilot/runs/<run>/questions.jsonl`
+ * in the main checkout.
  *
  * Every clarifying question Phase 1 had to ask marks context the pipeline
  * could not find on its own — in the task description, in the repo, in
@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 // `count >= NaN` is false for every cluster, so the report silently prints
 // "no candidates" for a corpus that has them.
 import { splitThresholdFlag } from "./autopilot-findings.mjs";
+import { RUNS_ROOT } from "./autopilot-paths.mjs";
 
 /**
  * Where the answer SHOULD have lived — not what the question was about.
@@ -364,7 +365,7 @@ export function main(argv = process.argv.slice(2)) {
 
   if (command === "report") {
     const { positional, flagValue } = splitThresholdFlag(rest);
-    const [root = ".superpowers/autopilot", positionalThreshold] = positional;
+    const [root = RUNS_ROOT, positionalThreshold] = positional;
     const rawThreshold = flagValue ?? positionalThreshold ?? "2";
     const threshold = Number(rawThreshold);
     if (!Number.isInteger(threshold) || threshold < 1) {

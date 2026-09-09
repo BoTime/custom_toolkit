@@ -28,10 +28,12 @@ Codex before you run it: `superpowers:writing-plans`,
 `superpowers:finishing-a-development-branch`, and
 `superpowers:using-git-worktrees`.
 
-Codex reads project overrides from `.codex/autopilot.json`, layered over
+Codex reads project overrides from
+`.superpowers/autopilot/configs/autopilot.codex.json`, layered over
 [`plugins/autopilot/autopilot.codex.default.json`](plugins/autopilot/autopilot.codex.default.json).
-Claude keeps using `.claude/autopilot.json`; the files do not replace each
-other.
+Claude reads its own file in the same directory,
+`.superpowers/autopilot/configs/autopilot.json`; the two files do not replace
+each other.
 
 ## Plugins
 
@@ -69,9 +71,11 @@ is missing. It also needs a git repo with an `origin` remote and a working
 
 Config resolves in two layers. Claude loads
 [`autopilot.default.json`](plugins/autopilot/autopilot.default.json) with the
-project's optional `.claude/autopilot.json` layered over it. Codex loads
+project's optional `.superpowers/autopilot/configs/autopilot.json` layered over
+it. Codex loads
 [`autopilot.codex.default.json`](plugins/autopilot/autopilot.codex.default.json)
-with the project's optional `.codex/autopilot.json` layered over it. The merge
+with the project's optional
+`.superpowers/autopilot/configs/autopilot.codex.json` layered over it. The merge
 is per key, and per role within `roles` — so overriding one role's model
 leaves its effort and the other roles intact. A first plain `/autopilot` run
 in a project with no config file writes that host's full defaults to the file,
@@ -92,7 +96,7 @@ tests silently is worse — the post-rebase test run is the only thing that
 catches semantic conflicts (task A renames a function, task B adds a caller of
 the old name, git reports nothing, the branch is broken). Unset, preflight
 warns and the `land` stage parks rather than reporting green. In Codex, put
-that override in `.codex/autopilot.json`.
+that override in `.superpowers/autopilot/configs/autopilot.codex.json`.
 
 #### Ceremony tiers
 
@@ -180,8 +184,9 @@ run rather than reporting green.
 | `artifacts` | *(none)* | Where `verify` publishes its screenshots. Absent → screenshots stay local and the PR body is text-only. |
 
 `/autopilot-github` additionally needs the two keys that cannot be guessed. Put
-them in the selected host config file (`.claude/autopilot.json` on Claude,
-`.codex/autopilot.json` on Codex). The four status names merge per key from the
+them in the selected host config file
+(`.superpowers/autopilot/configs/autopilot.json` on Claude,
+`.superpowers/autopilot/configs/autopilot.codex.json` on Codex). The four status names merge per key from the
 defaults, so this is usually the whole block:
 
 ```json
@@ -226,7 +231,7 @@ S3-compatible bucket (Cloudflare R2) and renders it in the PR body — and, unde
 | `bucket` | The bucket the screenshots are written to |
 | `public_base_url` | The bucket's public URL, which the rendered links are built from. R2 assigns this per bucket; it cannot be derived from the account id |
 
-**No credential goes in `.claude/autopilot.json`.** The three the signer needs —
+**No credential goes in `.superpowers/autopilot/configs/autopilot.json`.** The three the signer needs —
 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` — are read from
 the env file named above, which is the project's own and already git-ignored.
 Autopilot never writes them anywhere: not into the repository, the PR body, an

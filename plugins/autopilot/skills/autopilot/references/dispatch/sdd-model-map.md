@@ -1,6 +1,6 @@
 Do not use your own Model Selection judgment to pick models or effort
 levels. Use this mapping for every internal dispatch instead, reading the
-values from `.claude/autopilot.json`'s `roles` block:
+values from `.superpowers/autopilot/configs/autopilot.json`'s `roles` block:
 
 - Implementer, mechanical task → the `implement` role's model and effort
 - Implementer, multi-file or judgment task → the `implement_complex` role's

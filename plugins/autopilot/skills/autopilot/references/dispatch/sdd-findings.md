@@ -1,7 +1,7 @@
 Findings capture contract for this stage:
 
 1. **Append one JSON line per review finding** to
-   `.superpowers/autopilot/<run>/findings.jsonl` in the **main checkout**,
+   `.superpowers/autopilot/runs/<run>/findings.jsonl` in the **main checkout**,
    beside `run.md` — not inside the worktree, which the reaper deletes. Use a
    Bash append (`>>`); a worktree-isolated session cannot Write/Edit to the
    main checkout, but Bash appends work.

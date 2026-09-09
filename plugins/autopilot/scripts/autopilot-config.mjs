@@ -1,8 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import {
+  HOSTS,
   hostConfigPath,
   hostDefaultsPath,
   hostEffortOverride,
+  legacyHostConfigPath,
 } from "./autopilot-host.mjs";
 
 export const ROLES = [
@@ -332,7 +335,68 @@ export function loadConfig(
     const source = project === undefined ? resolvedDefaultsPath : `${path} (merged over defaults)`;
     throw new Error(`${source} is invalid:\n  ${errors.join("\n  ")}`);
   }
+
+  // A deprecation, not a permanent second path: the fallback exists so a
+  // project that has not moved keeps working across one release. Matched with
+  // `===` against the bare relative literal, which is the only string
+  // `resolveConfigPath` ever hands back for a legacy config.
+  if (project !== undefined) {
+    const staleHost = HOSTS.find((h) => legacyHostConfigPath(h) === path);
+    if (staleHost) {
+      warnings.push(
+        `${path} is the old project config location — move it to ` +
+          `${hostConfigPath(staleHost)} and commit it`,
+      );
+    }
+  }
+
   return { config: merged, warnings, usedProjectConfig: project !== undefined };
+}
+
+/**
+ * The gitignore rules that make `.superpowers/autopilot/configs/` tracked
+ * while everything else under `.superpowers/` stays ignored.
+ *
+ * git cannot re-include a file whose parent directory is excluded, so each
+ * parent is un-ignored before its contents are re-ignored. Appended — never
+ * inserted — because the last matching pattern wins, and these have to beat a
+ * pre-existing `.superpowers/` line.
+ */
+export const IGNORE_RULES = [
+  "# autopilot keeps its project config under .superpowers/, which is otherwise",
+  "# ignored. git cannot un-ignore a file inside an excluded directory, so each",
+  "# parent is un-ignored before its contents are re-ignored. Runs stay ignored:",
+  "# they are rederived every run and are per-machine.",
+  "!.superpowers/",
+  ".superpowers/*",
+  "!.superpowers/autopilot/",
+  ".superpowers/autopilot/*",
+  "!.superpowers/autopilot/configs/",
+].join("\n");
+
+/** The most specific rule; its presence is what "already done" means. */
+const IGNORE_SENTINEL = "!.superpowers/autopilot/configs/";
+
+/**
+ * Append `IGNORE_RULES` to `gitignorePath` unless they are already there.
+ * Idempotent: rerunning the scaffolder on a project that has the rules
+ * changes nothing and reports `changed: false`.
+ */
+export function ensureIgnoreRules(
+  gitignorePath = ".gitignore",
+  {
+    readFile = (p) => readFileSync(p, "utf8"),
+    writeFile = (p, text) => writeFileSync(p, text),
+    exists = existsSync,
+  } = {},
+) {
+  const text = exists(gitignorePath) ? readFile(gitignorePath) : "";
+  if (text.split("\n").includes(IGNORE_SENTINEL)) {
+    return { path: gitignorePath, changed: false };
+  }
+  const lead = text === "" ? "" : text.endsWith("\n") ? "\n" : "\n\n";
+  writeFile(gitignorePath, `${text}${lead}${IGNORE_RULES}\n`);
+  return { path: gitignorePath, changed: true };
 }
 
 /**
@@ -346,7 +410,9 @@ export function loadConfig(
  * Never overwrites. An existing file, malformed or not, is the developer's to
  * fix; replacing it would silently discard their edits. No merging and no
  * validation on write: the shipped defaults are already valid, and the
- * project pins them from here on. Returns the written path.
+ * project pins them from here on. Creates the config's parent directory and
+ * seeds the project's ignore rules, and returns the written path alongside
+ * the gitignore outcome.
  */
 export function scaffoldConfig(
   path,
@@ -355,6 +421,8 @@ export function scaffoldConfig(
     readFile = (p) => readFileSync(p, "utf8"),
     writeFile = (p, text) => writeFileSync(p, text),
     exists = existsSync,
+    mkdir = (d) => mkdirSync(d, { recursive: true }),
+    gitignorePath = ".gitignore",
   } = {},
 ) {
   const defaultsPath = hostDefaultsPath(host); // throws on an unknown host
@@ -367,6 +435,9 @@ export function scaffoldConfig(
       `${defaultsPath} is not a JSON object — the plugin install is incomplete`,
     );
   }
+  // `.claude/` and `.codex/` already existed whenever the plugin ran;
+  // `.superpowers/autopilot/configs/` does not.
+  mkdir(dirname(path));
   writeFile(path, `${JSON.stringify({ test_command: "", ...defaults }, null, 2)}\n`);
-  return path;
+  return { path, gitignore: ensureIgnoreRules(gitignorePath, { readFile, writeFile, exists }) };
 }

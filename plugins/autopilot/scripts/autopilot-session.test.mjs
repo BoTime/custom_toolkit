@@ -367,4 +367,19 @@ describe("main", () => {
     const logError = vi.fn();
     expect(main(["frobnicate"], env, { ...base, logError })).toBe(1);
   });
+
+  // No --config anywhere in the pipeline's Claude path: the default is the
+  // only reason `main` reads the project's caps at all.
+  it("defaults the config path to the resolved project config", () => {
+    const seen = [];
+    main(["measure"], env, {
+      ...base,
+      load: (p) => {
+        seen.push(p);
+        return { config: {} };
+      },
+      log: vi.fn(),
+    });
+    expect(seen[0]).toBe(".superpowers/autopilot/configs/autopilot.json");
+  });
 });

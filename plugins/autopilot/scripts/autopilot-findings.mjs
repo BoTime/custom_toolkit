@@ -1,6 +1,6 @@
 /**
  * The findings corpus: one JSON object per line, appended by SDD's review roles
- * to `.superpowers/autopilot/<run>/findings.jsonl` in the main checkout.
+ * to `.superpowers/autopilot/runs/<run>/findings.jsonl` in the main checkout.
  *
  * Every function here is pure over strings and arrays. File reading lives in
  * the CLI at the bottom, so the logic is testable without a fixture tree.
@@ -8,6 +8,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { RUNS_ROOT } from "./autopilot-paths.mjs";
 
 /**
  * The stages that can be at fault for a finding.
@@ -229,7 +230,7 @@ export function splitThresholdFlag(argv) {
 /** `report [root] [threshold]` prints the candidate report. */
 export function main(argv = process.argv.slice(2)) {
   const { positional, flagValue } = splitThresholdFlag(argv);
-  const [command, root = ".superpowers/autopilot", positionalThreshold] = positional;
+  const [command, root = RUNS_ROOT, positionalThreshold] = positional;
   if (command !== "report") {
     console.error(
       "usage: autopilot-findings.mjs report [root] [threshold|--threshold=N]",

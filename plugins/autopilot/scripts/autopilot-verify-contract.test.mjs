@@ -114,7 +114,7 @@ describe("verify artifact placement", () => {
     // The run-directory path is orchestrator-facing — it is what the
     // orchestrator passes as `--verify-dir`; the placement rule itself is what
     // the dispatched agent is told.
-    expect(verify).toContain(".superpowers/autopilot/<run>/verify/");
+    expect(verify).toContain(".superpowers/autopilot/runs/<run>/verify/");
     expect(verifyPrompt).toMatch(/main checkout/i);
     expect(verifyPrompt).toMatch(/nothing is committed/i);
   });
@@ -200,7 +200,7 @@ describe("verify gating", () => {
   });
 
   it("names the recipe the plan stage derived and its required keys", () => {
-    expect(verify).toContain(".superpowers/autopilot/<run>/verify/recipe.json");
+    expect(verify).toContain(".superpowers/autopilot/runs/<run>/verify/recipe.json");
     for (const key of RECIPE_KEYS) expect(verify).toContain(key);
     expect(verify).toContain("stop_command");
     expect(verify).toContain("seed_command");
@@ -328,7 +328,7 @@ describe("plan stage derives the verify recipe", () => {
   const plan = unwrap(section(skill, "plan"));
 
   it("writes it to the per-run verify directory in the main checkout", () => {
-    expect(plan).toContain(".superpowers/autopilot/<run>/verify/recipe.json");
+    expect(plan).toContain(".superpowers/autopilot/runs/<run>/verify/recipe.json");
     expect(plan).toMatch(/main checkout/i);
   });
 

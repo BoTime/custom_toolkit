@@ -18,7 +18,7 @@ skill, not when running it.
 ## Resume
 
 If invoked as `/autopilot resume <branch>`, read
-`.superpowers/autopilot/<branch>/run.md`, call `nextStage` on it, and jump to
+`.superpowers/autopilot/runs/<branch>/run.md`, call `nextStage` on it, and jump to
 that stage. Do not redo completed stages.
 
 `nextStage` returns one of eleven values: the nine stages — `phase1`, `setup`,
@@ -69,8 +69,8 @@ missing and stop — do not start the brainstorm.
 
    | Harness | `<host>` | `<config>` |
    |---|---|---|
-   | Claude Code | `claude` | `.claude/autopilot.json` |
-   | Codex | `codex` | `.codex/autopilot.json` |
+   | Claude Code | `claude` | `.superpowers/autopilot/configs/autopilot.json` |
+   | Codex | `codex` | `.superpowers/autopilot/configs/autopilot.codex.json` |
 
    Stop if the harness is neither one. Every config read and stage composition
    below uses this selected pair; never mix a config from one row with the host
@@ -92,11 +92,12 @@ missing and stop — do not start the brainstorm.
    AP="<plugin root>" && node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-config.mjs').href).then(m=>console.log('created',m.scaffoldConfig(process.argv[2],{host:process.argv[3]})))" "$AP" "<config>" "<host>"
    ```
 
-   Then report the created path, say that `test_command` must be filled in
-   before rerunning `/autopilot`, and stop the run — do not start the
-   brainstorm. The file is left uncommitted on the current branch; committing
-   it is the developer's decision. A non-zero exit here (the directory is
-   unwritable, or the file appeared between the check and the write) is a
+   Then report the created path and whether `.gitignore` changed, say that
+   `test_command` must be filled in before rerunning `/autopilot`, and stop the
+   run — do not start the brainstorm. Commit the config: a worktree contains
+   only committed files, and the stage agents run inside one. A non-zero exit
+   here (the directory is unwritable, or the file appeared between the check
+   and the write) is a
    preflight failure like any other: report the error and stop.
 
    If `<config>` exists, validate it:
@@ -123,7 +124,7 @@ missing and stop — do not start the brainstorm.
 
 ## Phase 1 — brainstorm
 
-Create the ledger at `.superpowers/autopilot/<branch>/run.md` once the branch
+Create the ledger at `.superpowers/autopilot/runs/<branch>/run.md` once the branch
 name is known; until then, hold the start timestamp. Its header names the
 task, not the spec, because the ledger exists before the spec file does:
 
@@ -153,7 +154,7 @@ fast as it is today, and the trade — a brainstorm interrupted before the
 handoff records nothing — is deliberate.
 
 Write the batch with a quoted heredoc, then capture it. Capture appends one
-line per element to `.superpowers/autopilot/<run>/questions.jsonl` in the
+line per element to `.superpowers/autopilot/runs/<run>/questions.jsonl` in the
 **main checkout**, beside `run.md`:
 
 ```bash
@@ -169,7 +170,7 @@ cat > /tmp/autopilot-questions.json <<'JSON'
 ]
 JSON
 node "$AP/scripts/autopilot-questions.mjs" capture \
-  --run-dir=.superpowers/autopilot/<run> \
+  --run-dir=.superpowers/autopilot/runs/<run> \
   --questions=@/tmp/autopilot-questions.json
 ```
 
@@ -182,7 +183,7 @@ about:
 | `task` | The issue or task description could have stated it |
 | `repo` | Discoverable by reading code, docs, or tests already present |
 | `claude_md` | A project convention that belongs in `CLAUDE.md` |
-| `config` | A key in `.claude/autopilot.json` |
+| `config` | A key in `<config>` |
 | `judgment` | Genuine human preference; no artifact could have supplied it |
 
 Record the `judgment` questions too. A recurring judgment question is never a
@@ -246,7 +247,7 @@ two names for one value. It is not the worktree directory name and not the
 `worktree-` prefixed git branch. Those may differ; `<run>` does not change to
 follow them. Pick it once and reuse it verbatim.
 
-The run directory is `.superpowers/autopilot/<run>/` in the **main checkout** —
+The run directory is `.superpowers/autopilot/runs/<run>/` in the **main checkout** —
 never inside the worktree. `run.md` and `verify/` live there, and
 `findings.jsonl` inherits the same placement.
 
@@ -300,7 +301,7 @@ Four rules:
 carry an ISO timestamp, and `append()` is what stamps it:
 
 ```bash
-node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/<branch>/run.md','<entry text>'))" "$AP"
+node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/runs/<branch>/run.md','<entry text>'))" "$AP"
 ```
 
 `cat`/heredoc or the Write tool produce untimestamped lines. Run from the
@@ -308,12 +309,11 @@ repository root so relative paths resolve.
 
 ### The session cap
 
-A session's cost grows with the square of its own length, so no one session
-carries a whole run. **After appending a stage's completion line, record your
-size and hand off if you are over cap:**
+**After appending a stage's completion line, record your size and hand off if
+you are over cap:**
 
 ```bash
-node "$AP/scripts/autopilot-session.mjs" record .superpowers/autopilot/<branch>/run.md <stage-just-finished>
+node "$AP/scripts/autopilot-session.mjs" record .superpowers/autopilot/runs/<branch>/run.md <stage-just-finished>
 ```
 
 It prints `{"turns":N,"ctx":N,"handoff":true|false,"over":[...]}`.
@@ -323,14 +323,12 @@ It prints `{"turns":N,"ctx":N,"handoff":true|false,"over":[...]}`.
   and that the run continues with `/autopilot resume <branch>`. Do not start
   the next stage.
 
-Check at a stage boundary only, never mid-stage: a session that stops halfway
-through `sdd` hands its successor no way to pick up, and the stage is redone.
+Check at a stage boundary only, never mid-stage.
 
-Caps live under `session` in `.claude/autopilot.json` (`max_turns`,
+Caps live under `session` in `<config>` (`max_turns`,
 `max_context_tokens`, `on_cap`), layered over the plugin defaults. The
 measurement covers the whole session, Phase 1 included. `on_cap: continue`
-makes `record` never ask for a handoff — for unattended runs, where a stop is a
-stall until someone types `resume`. Obey the `handoff` field; never read the
+makes `record` never ask for a handoff. Obey the `handoff` field; never read the
 policy yourself.
 
 ### `setup`
@@ -384,7 +382,7 @@ a browser and whether to open one at all.
 The design is multi-line, so it goes to a file first:
 
 ```bash
-cat > .superpowers/autopilot/<run>/design.md <<'EOF'
+cat > .superpowers/autopilot/runs/<run>/design.md <<'EOF'
 <the design the brainstorm settled>
 EOF
 node "$AP/scripts/autopilot-dispatch.mjs" spec \
@@ -394,7 +392,7 @@ node "$AP/scripts/autopilot-dispatch.mjs" spec \
   --worktree=<worktree path> \
   --branch=<branch> \
   --spec-path=docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md \
-  --design=@.superpowers/autopilot/<run>/design.md \
+  --design=@.superpowers/autopilot/runs/<run>/design.md \
   --criteria-source="The acceptance criteria for this spec come from the design settled in the brainstorm, below."
 ```
 
@@ -454,12 +452,12 @@ compose file, `scripts/`, the README — and answer four questions:
 | `stop_command` | What one command takes it back down? | no |
 | `seed_command` | What one command loads test data, if any is needed? | no |
 
-Write them to `.superpowers/autopilot/<run>/verify/recipe.json` in the **main
+Write them to `.superpowers/autopilot/runs/<run>/verify/recipe.json` in the **main
 checkout** with a Bash heredoc:
 
 ```bash
-mkdir -p .superpowers/autopilot/<run>/verify
-cat > .superpowers/autopilot/<run>/verify/recipe.json <<'EOF'
+mkdir -p .superpowers/autopilot/runs/<run>/verify
+cat > .superpowers/autopilot/runs/<run>/verify/recipe.json <<'EOF'
 {
   "dev_command":      "bash scripts/worktree-up.sh",
   "base_url_command": "grep '^WEB_ORIGIN=' apps/api/.env | cut -d= -f2-",
@@ -583,7 +581,7 @@ Skipping is two steps, not one:
 
 ```bash
 node "$AP/scripts/autopilot-verify.mjs" skip \
-  --run-dir=.superpowers/autopilot/<run>/verify \
+  --run-dir=.superpowers/autopilot/runs/<run>/verify \
   --reason="no ui acceptance criteria"
 ```
 
@@ -624,7 +622,7 @@ report — to a file, compose the fix-round dispatch, dispatch by the printed
 path, then re-run the script **with `--round=2`**:
 
 ```bash
-cat > .superpowers/autopilot/<run>/verify/failures.md <<'EOF'
+cat > .superpowers/autopilot/runs/<run>/verify/failures.md <<'EOF'
 <the summarized failures>
 EOF
 node "$AP/scripts/autopilot-dispatch.mjs" verify-fix \
@@ -633,11 +631,11 @@ node "$AP/scripts/autopilot-dispatch.mjs" verify-fix \
   --config=<config> \
   --worktree=<worktree path> \
   --failing-criteria="AC3, AC5" \
-  --failures=@.superpowers/autopilot/<run>/verify/failures.md
+  --failures=@.superpowers/autopilot/runs/<run>/verify/failures.md
 
 node "$AP/scripts/autopilot-verify.mjs" run \
   --config=<config> \
-  --run-dir=.superpowers/autopilot/<run>/verify \
+  --run-dir=.superpowers/autopilot/runs/<run>/verify \
   --cwd=<worktree path> \
   --spec=<path-to-spec> \
   --round=2
@@ -654,7 +652,7 @@ this re-run must say `--round=2`, or a criterion still red writes a second
 finding identical to the first. `2` is the only value it ever takes.
 
 The script appends the findings itself, to
-`.superpowers/autopilot/<run>/findings.jsonl` in the **main checkout**, under
+`.superpowers/autopilot/runs/<run>/findings.jsonl` in the **main checkout**, under
 the existing seven-field contract — `task`, `round`, `severity`,
 `stage_at_fault`, `pattern`, `detail`, `verdict` — with `task: 0` as the
 sentinel for "not a numbered SDD task", and `{"task": 0, "clean": true}` when
@@ -667,7 +665,7 @@ Append: `verify: <n>/<n> ui criteria passed`.
 
 #### Screenshots
 
-When the project's `.claude/autopilot.json` carries an `artifacts` block, the
+When the project's `<config>` carries an `artifacts` block, the
 `run` subcommand also uploads one screenshot per UI criterion to the configured
 bucket and writes `verify/artifacts/uploads.json`. Nothing is dispatched and
 nothing is configured at this stage: the script does it, and the
@@ -722,7 +720,7 @@ Append: `learnings committed → docs/autopilot/learnings.md`.
 
 ### `land`
 
-Run `node "$AP/scripts/autopilot-land.mjs" <base_ref> | tee .superpowers/autopilot/<run>/land.txt`
+Run `node "$AP/scripts/autopilot-land.mjs" <base_ref> | tee .superpowers/autopilot/runs/<run>/land.txt`
 from the repository root, capturing its output. The `conflict` outcome below
 reuses this capture — re-running the script here would hit a rebase already in
 progress and misreport the error as the conflict list.
@@ -745,7 +743,7 @@ absent test command as a pass.
     --config=<config> \
     --worktree=<worktree path> \
     --base-ref=<config.base_ref> \
-    --conflicts=@.superpowers/autopilot/<run>/land.txt
+    --conflicts=@.superpowers/autopilot/runs/<run>/land.txt
   ```
 
   It resolves only what it can reason about confidently and reports anything
@@ -779,8 +777,8 @@ appending first is what makes the PR entry the last timestamp, so the span
 covers the whole run:
 
 ```bash
-node "$AP/scripts/autopilot-ledger.mjs" timing .superpowers/autopilot/<branch>/run.md
-node "$AP/scripts/autopilot-ledger.mjs" duration .superpowers/autopilot/<branch>/run.md
+node "$AP/scripts/autopilot-ledger.mjs" timing .superpowers/autopilot/runs/<branch>/run.md
+node "$AP/scripts/autopilot-ledger.mjs" duration .superpowers/autopilot/runs/<branch>/run.md
 ```
 
 `timing` prints a markdown section — the total plus a per-stage table.
@@ -791,7 +789,7 @@ append to it, and edit the PR — never replace the body, the description writte
 by `finishing-a-development-branch` is the part a reviewer reads:
 
 ```bash
-RUN=.superpowers/autopilot/<branch>
+RUN=.superpowers/autopilot/runs/<branch>
 gh pr view <url> --json body --jq .body > "$RUN/pr-body.md"
 if [ -f "$RUN/verify/pr-section.md" ]; then
   printf '\n\n' >> "$RUN/pr-body.md"
@@ -825,7 +823,7 @@ sees production screens, so point `artifacts` at the former.
 Last, audit the run's own session sizes:
 
 ```bash
-node "$AP/scripts/autopilot-session.mjs" check .superpowers/autopilot/<branch>/run.md
+node "$AP/scripts/autopilot-session.mjs" check .superpowers/autopilot/runs/<branch>/run.md
 ```
 
 Exit 0 means every session handed off before its cap. Non-zero names the stages

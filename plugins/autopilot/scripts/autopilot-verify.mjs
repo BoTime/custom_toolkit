@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { uploadScreenshots } from "./autopilot-artifacts.mjs";
 import { loadConfig } from "./autopilot-config.mjs";
+import { resolveConfigPath } from "./autopilot-host.mjs";
 
 /**
  * Exit codes, because the verify stage branches on them and "non-zero" is not
@@ -641,7 +642,7 @@ export async function main(argv = process.argv.slice(2), runVerify = verify) {
 
   if (command === "run") {
     const result = await runVerify({
-      configPath: flag("config", ".claude/autopilot.json"),
+      configPath: flag("config") ?? resolveConfigPath("claude").path,
       runDir: flag("run-dir"),
       cwd: flag("cwd", process.cwd()),
       specPath: flag("spec"),

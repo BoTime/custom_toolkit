@@ -15,9 +15,9 @@ Then, from the repository root:
 
 ```bash
 AP="<the plugin root>"
-THRESHOLD=$(node -e "import('$AP/scripts/autopilot-config.mjs').then(m=>console.log(m.loadConfig('.claude/autopilot.json').config.findings_threshold))")
-node "$AP/scripts/autopilot-findings.mjs" report .superpowers/autopilot "$THRESHOLD"
-node "$AP/scripts/autopilot-questions.mjs" report .superpowers/autopilot "$THRESHOLD"
+THRESHOLD=$(node -e "import('$AP/scripts/autopilot-config.mjs').then(m=>console.log(m.loadConfig('.superpowers/autopilot/configs/autopilot.json').config.findings_threshold))")
+node "$AP/scripts/autopilot-findings.mjs" report .superpowers/autopilot/runs "$THRESHOLD"
+node "$AP/scripts/autopilot-questions.mjs" report .superpowers/autopilot/runs "$THRESHOLD"
 ```
 
 Run them in that order and present them in that order: review-finding
@@ -25,7 +25,7 @@ candidates first, then the brainstorm-question summary and its
 `## Missing-context candidates` section. Both reports read the same
 `findings_threshold`; there is no separate key for questions.
 
-`findings_threshold` comes from `.claude/autopilot.json`, layered over the
+`findings_threshold` comes from `.superpowers/autopilot/configs/autopilot.json`, layered over the
 plugin default of 2. If the findings corpus is empty, say so and move on to
 the question report below — no run has captured findings yet.
 

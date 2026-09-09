@@ -3,7 +3,7 @@
 Read this on a Claude run, once, before the first dispatch. A Codex run never
 needs it.
 
-The printed path is `.superpowers/autopilot/<run>/agents/<stage>.md`. It is the
+The printed path is `.superpowers/autopilot/runs/<run>/agents/<stage>.md`. It is the
 subagent definition; dispatch the Agent by that printed path. The Agent tool has
 no `effort` parameter, so the definition's frontmatter carries it.
 
