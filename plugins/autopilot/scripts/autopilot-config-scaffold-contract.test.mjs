@@ -35,12 +35,15 @@ describe("preflight step 4 scaffolds an absent config", () => {
     expect(skill.indexOf(SCAFFOLD_CALL)).toBeLessThan(skill.indexOf(VALIDATE_CALL));
   });
 
-  it("reports the created path and the test_command instruction, then stops", () => {
+  it("reports the created path and the commit instruction, then stops", () => {
     // AC5
     expect(skill).toContain("report the created path");
     expect(skill).toContain("`test_command` must be filled in before rerunning `/autopilot`");
     expect(skill).toContain("stop the run — do not start the brainstorm");
-    expect(skill).toContain("The file is left uncommitted on the current branch");
+    // AC10 — a config the worktree cannot see is a config the stage agents
+    // cannot read, so the scaffold branch now ends in a commit instruction.
+    expect(skill).toContain("Commit the config");
+    expect(skill).not.toContain("left uncommitted");
   });
 
   it("no longer says a project with no config file runs on the host's defaults", () => {

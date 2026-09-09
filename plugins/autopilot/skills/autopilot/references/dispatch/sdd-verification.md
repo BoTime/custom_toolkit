@@ -1,7 +1,7 @@
 Verification contract for this stage:
 
 1. **Verify through `test_command`.** The project states its test command in
-   `.claude/autopilot.json`. That is the gate. Do not construct ad-hoc
+   `.superpowers/autopilot/configs/autopilot.json`. That is the gate. Do not construct ad-hoc
    equivalents to check the same thing.
 2. **Do not narrate verification.** No `md5` before/after comparisons, no
    `echo` separators, no `ls` existence probes, no re-running a command to

@@ -7,10 +7,10 @@ The concrete composition prefix is:
 
 ```bash
 node "$AP/scripts/autopilot-dispatch.mjs" <stage> \
-  --run=<run> --host=codex --config=.codex/autopilot.json [--key=value ...]
+  --run=<run> --host=codex --config=.superpowers/autopilot/configs/autopilot.codex.json [--key=value ...]
 ```
 
-The printed path is `.superpowers/autopilot/<run>/agents/<stage>.json`. Read
+The printed path is `.superpowers/autopilot/runs/<run>/agents/<stage>.json`. Read
 that JSON record, then call `spawn_agent` with `task_name`
 `${record.role}-${stage}`, `message` `record.instructions`, `model`
 `record.model`, and `reasoning_effort` `record.reasoning_effort`; set

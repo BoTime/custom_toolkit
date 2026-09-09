@@ -70,7 +70,9 @@ describe("Codex skill execution contract", () => {
     const flat = flatten(`${coreSkill}\n${codexDispatch}`);
 
     expect(flat).toContain("--host=codex");
-    expect(flat).toContain("--config=.codex/autopilot.json");
+    expect(flat).toContain(
+      "--config=.superpowers/autopilot/configs/autopilot.codex.json",
+    );
     expect(flat).toContain("spawn_agent");
     expect(flat).toContain("record.instructions");
     expect(flat).toContain("record.model");
@@ -87,7 +89,9 @@ describe("Codex skill execution contract", () => {
     expect(commands.length).toBeGreaterThanOrEqual(9);
     for (const command of commands) {
       expect(command).toMatch(/--host=(?:<host>|codex)/);
-      expect(command).toMatch(/--config=(?:<config>|\.codex\/autopilot\.json)/);
+      expect(command).toMatch(
+        /--config=(?:<config>|\.superpowers\/autopilot\/configs\/autopilot\.codex\.json)/,
+      );
     }
   });
 
@@ -108,7 +112,7 @@ describe("Codex skill execution contract", () => {
   it("uses the selected Codex config throughout the GitHub wrapper", () => {
     const flat = flatten(githubSkill);
 
-    expect(flat).toContain(".codex/autopilot.json");
+    expect(flat).toContain(".superpowers/autopilot/configs/autopilot.codex.json");
     expect(flat).toMatch(
       /autopilot-github-issue\.mjs preflight --config=<config>/,
     );

@@ -133,7 +133,7 @@ Classify the settled design into one of three tiers:
 | `large` | genuinely spanning separate subsystems | 5 tasks |
 
 Ceilings are the shipped defaults; a project may tune them in
-`.claude/autopilot.json`. Classify by the shape of the work, not by the number.
+`.superpowers/autopilot/configs/autopilot.json`. Classify by the shape of the work, not by the number.
 
 **State the tier in the same message as the approaches**, in one line — for
 example, "I'd classify this `small`: it's one function and its caller."

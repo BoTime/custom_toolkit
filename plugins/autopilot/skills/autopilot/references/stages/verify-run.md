@@ -9,7 +9,7 @@ those decide *whether* to run. This is everything needed to *execute*.
 
 ## The recipe the `plan` stage derived
 
-The commands come from `.superpowers/autopilot/<run>/verify/recipe.json` in the
+The commands come from `.superpowers/autopilot/runs/<run>/verify/recipe.json` in the
 **main checkout**, written by the `plan` stage. Nothing here is configured by
 hand:
 
@@ -59,7 +59,7 @@ node "$AP/scripts/autopilot-dispatch.mjs" verify \
   --config=<config> \
   --worktree=<worktree path> \
   --spec-path=<path-to-spec> \
-  --verify-dir=.superpowers/autopilot/<run>/verify
+  --verify-dir=.superpowers/autopilot/runs/<run>/verify
 ```
 
 The composed definition carries the browser verification contract.
@@ -69,7 +69,7 @@ Then run the checks:
 ```bash
 node "$AP/scripts/autopilot-verify.mjs" run \
   --config=<config> \
-  --run-dir=.superpowers/autopilot/<run>/verify \
+  --run-dir=.superpowers/autopilot/runs/<run>/verify \
   --cwd=<worktree path> \
   --spec=<path-to-spec>
 ```

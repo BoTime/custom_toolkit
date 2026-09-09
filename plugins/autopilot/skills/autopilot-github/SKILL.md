@@ -61,9 +61,11 @@ ls "$AP"/scripts/autopilot-github-issue.mjs   # must exist; if not, stop
 ```
 
 Run every command below from the **repository root**, so the relative selected
-config path and `.superpowers/autopilot/...` paths resolve. Autopilot preflight
-selects `<host>` and `<config>`: Claude uses `.claude/autopilot.json`; Codex
-uses `.codex/autopilot.json`. Keep that same pair throughout this wrapper.
+config path and `.superpowers/autopilot/runs/...` paths resolve. Autopilot preflight
+selects `<host>` and `<config>`: Claude uses
+`.superpowers/autopilot/configs/autopilot.json`; Codex uses
+`.superpowers/autopilot/configs/autopilot.codex.json`. Keep that same pair
+throughout this wrapper.
 
 ## Delta 0 — preflight
 
@@ -79,7 +81,7 @@ This is a **hard requirement**, at the same tier as autopilot's "skills resolve"
 check. A non-zero exit prints exactly which `github` keys are missing. Report
 those key names and **stop** — do not start the brainstorm. The fix is a
 `github` block in the project's selected `<config>` file (for Codex,
-`.codex/autopilot.json`):
+`.superpowers/autopilot/configs/autopilot.codex.json`):
 
 ```json
 "github": {
@@ -119,11 +121,11 @@ and stepped past — see "Transition failures do not park".
 unchanged:
 
 ```bash
-node "$AP"/scripts/autopilot-github-issue.mjs resolve --issue <n> --write-ledger .superpowers/autopilot
+node "$AP"/scripts/autopilot-github-issue.mjs resolve --issue <n> --write-ledger .superpowers/autopilot/runs
 ```
 
 This one call does two things: it prints the JSON object below, **and** it
-creates `.superpowers/autopilot/<run>/run.md` with its header line already
+creates `.superpowers/autopilot/runs/<run>/run.md` with its header line already
 appended — before `started (phase 1)` is appended to it.
 
 It prints one JSON object:
@@ -192,7 +194,7 @@ file to the `spec` dispatch as `--criteria-source=@<path>` in place of
 autopilot's default sentence:
 
 ```bash
-cat > .superpowers/autopilot/<run>/criteria-source.md <<'EOF'
+cat > .superpowers/autopilot/runs/<run>/criteria-source.md <<'EOF'
 The acceptance criteria for this spec come from GitHub issue #<n>. Where the
 issue states criteria — a checklist, an "acceptance criteria" heading, a
 "should" list — carry every one of them into the spec's
@@ -229,7 +231,7 @@ what lets the start hook name it — and **declared at `setup`** as the
 worktree/branch name passed to `superpowers:using-git-worktrees`, in place of a
 name falling out of the brainstorm. Everything downstream threads it exactly as
 autopilot already does: the ledger directory, the generated host-native stage
-artifacts under `.superpowers/autopilot/<run>/agents/`, the PR branch.
+artifacts under `.superpowers/autopilot/runs/<run>/agents/`, the PR branch.
 
 **Never re-derive the slug by hand.** It is the ledger directory's key: a
 different string points at a different directory and loses the run. Take it from
@@ -267,7 +269,7 @@ Every hook appends its own `github: `-prefixed line through
 entry carries an ISO timestamp and is visible to `parseLedger`:
 
 ```bash
-node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/<run>/run.md','<entry text>'))" "$AP"
+node -e "const{pathToFileURL}=require('node:url');import(pathToFileURL(process.argv[1]+'/scripts/autopilot-ledger.mjs').href).then(m=>m.append('.superpowers/autopilot/runs/<run>/run.md','<entry text>'))" "$AP"
 ```
 
 The six lines, in pipeline order:
@@ -297,7 +299,7 @@ Anchor: **immediately after `started (phase 1)` is appended.**
 1. `move --config=<config> --issue <n> --to "<status_in_progress>"` (from Ready). Append
    `github: moved to in-progress`.
 2. `comment --issue <n>` saying the run started, naming `<run>` and the ledger
-   path `.superpowers/autopilot/<run>/run.md`. Append
+   path `.superpowers/autopilot/runs/<run>/run.md`. Append
    `github: start comment posted`.
 
 ### Delta 3b — PR hook
@@ -342,7 +344,7 @@ verify is red after its one fix round, immediately **before** the
 ```bash
 node "$AP"/scripts/autopilot-github-issue.mjs screenshots \
   --issue <n> \
-  --manifest .superpowers/autopilot/<run>/verify/artifacts/uploads.json
+  --manifest .superpowers/autopilot/runs/<run>/verify/artifacts/uploads.json
 ```
 
 The `verify` stage writes that manifest only when the project configures an
@@ -392,7 +394,7 @@ the digits between `issue-` and the next `-` or the end of the string. Both
 `issue-42-csv-export-drops-unicode` and the bare `issue-42` fallback — the run
 name a title that normalizes to an empty slug produces — parse to `42`. With the
 number in hand the hooks still know which issue to act on. Then follow
-autopilot's own resume path: read `.superpowers/autopilot/<run>/run.md`, call
+autopilot's own resume path: read `.superpowers/autopilot/runs/<run>/run.md`, call
 `nextStage`, jump to that stage. Each hook's idempotency check decides whether
 it has work left to do.
 
