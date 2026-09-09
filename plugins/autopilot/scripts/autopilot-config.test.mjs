@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES, TIERS,
   validateConfig, validateGithubConfig, mergeConfig, loadConfig,
-  scaffoldConfig,
+  scaffoldConfig, ensureIgnoreRules, IGNORE_RULES,
 } from "./autopilot-config.mjs";
 import { hostDefaultsPath } from "./autopilot-host.mjs";
 import { readFileSync } from "node:fs";
@@ -951,9 +951,11 @@ describe("scaffoldConfig", () => {
   const harness = ({ present = false } = {}) => {
     const writes = [];
     const reads = [];
+    const mkdirs = [];
     return {
       writes,
       reads,
+      mkdirs,
       deps: {
         readFile: (p) => {
           reads.push(p);
@@ -963,6 +965,8 @@ describe("scaffoldConfig", () => {
           writes.push({ path: p, text });
         },
         exists: () => present,
+        mkdir: (d) => mkdirs.push(d),
+        gitignorePath: "/proj/.gitignore",
       },
     };
   };
@@ -971,9 +975,11 @@ describe("scaffoldConfig", () => {
     // AC1
     const { writes, deps } = harness();
     const returned = scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps });
-    expect(returned).toBe(CLAUDE_PROJECT);
-    expect(writes).toHaveLength(1);
+    expect(returned.path).toBe(CLAUDE_PROJECT);
+    expect(writes).toHaveLength(2);
     expect(writes[0].path).toBe(CLAUDE_PROJECT);
+    expect(writes[1].path).toBe("/proj/.gitignore");
+    expect(writes[1].text).toBe(`${IGNORE_RULES}\n`);
     const written = JSON.parse(writes[0].text);
     const shipped = JSON.parse(readFileSync(CLAUDE_DEFAULTS, "utf8"));
     expect(written).toEqual({ test_command: "", ...shipped });
@@ -1047,5 +1053,86 @@ describe("scaffoldConfig", () => {
     expect(text.startsWith('{\n  "test_command": "",\n')).toBe(true);
     expect(text.endsWith("}\n")).toBe(true);
     expect(text.endsWith("\n\n")).toBe(false);
+  });
+
+  it("creates the config's parent directory before writing", () => {
+    // AC6 — .claude/ and .codex/ always existed; configs/ does not.
+    const { writes, mkdirs, deps } = harness();
+    const result = scaffoldConfig(".superpowers/autopilot/configs/autopilot.json", {
+      host: "claude",
+      ...deps,
+    });
+    expect(mkdirs).toEqual([".superpowers/autopilot/configs"]);
+    expect(writes[0].path).toBe(".superpowers/autopilot/configs/autopilot.json");
+    expect(Object.keys(JSON.parse(writes[0].text))[0]).toBe("test_command");
+    expect(JSON.parse(writes[0].text).test_command).toBe("");
+    expect(result.path).toBe(".superpowers/autopilot/configs/autopilot.json");
+    expect(result.gitignore).toEqual({ path: "/proj/.gitignore", changed: true });
+  });
+
+  it("makes no directory and writes nothing when the config already exists", () => {
+    // AC6 — the check-then-write gap behind the "never overwrites" claim.
+    const { writes, mkdirs, deps } = harness({ present: true });
+    expect(() => scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps }))
+      .toThrow(/already exists/);
+    expect(writes).toEqual([]);
+    expect(mkdirs).toEqual([]);
+  });
+});
+
+describe("ensureIgnoreRules", () => {
+  const deps = (files) => {
+    const written = [];
+    return {
+      written,
+      exists: (p) => p in files,
+      readFile: (p) => files[p],
+      writeFile: (p, text) => { written.push({ path: p, text }); files[p] = text; },
+      files,
+    };
+  };
+
+  it("appends the block to a .gitignore that lacks it", () => {
+    const d = deps({ ".gitignore": "node_modules/\n.superpowers/\n" });
+    expect(ensureIgnoreRules(".gitignore", d)).toEqual({ path: ".gitignore", changed: true });
+    expect(d.written).toHaveLength(1);
+    const text = d.files[".gitignore"];
+    expect(text.startsWith("node_modules/\n.superpowers/\n")).toBe(true);
+    for (const rule of [
+      "!.superpowers/",
+      ".superpowers/*",
+      "!.superpowers/autopilot/",
+      ".superpowers/autopilot/*",
+      "!.superpowers/autopilot/configs/",
+    ]) {
+      expect(text.split("\n")).toContain(rule);
+    }
+    // Order is the whole mechanism: the negation must land after the
+    // pre-existing exclusion or git never re-includes the directory.
+    expect(text.indexOf("\n!.superpowers/\n"))
+      .toBeGreaterThan(text.indexOf("\n.superpowers/\n"));
+  });
+
+  it("writes nothing on a second run", () => {
+    const d = deps({ ".gitignore": "node_modules/\n.superpowers/\n" });
+    ensureIgnoreRules(".gitignore", d);
+    const after = d.files[".gitignore"];
+    d.written.length = 0;
+    expect(ensureIgnoreRules(".gitignore", d)).toEqual({ path: ".gitignore", changed: false });
+    expect(d.written).toEqual([]);
+    expect(d.files[".gitignore"]).toBe(after);
+  });
+
+  it("creates the rules when there is no .gitignore at all", () => {
+    const d = deps({});
+    expect(ensureIgnoreRules(".gitignore", d).changed).toBe(true);
+    expect(d.files[".gitignore"]).toBe(`${IGNORE_RULES}\n`);
+    expect(d.files[".gitignore"].startsWith("#")).toBe(true);
+  });
+
+  it("does not glue the block onto an unterminated last line", () => {
+    const d = deps({ ".gitignore": "node_modules/" });
+    ensureIgnoreRules(".gitignore", d);
+    expect(d.files[".gitignore"].split("\n")[0]).toBe("node_modules/");
   });
 });
