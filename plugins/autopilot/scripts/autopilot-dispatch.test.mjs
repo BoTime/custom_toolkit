@@ -525,6 +525,22 @@ describe("the sdd review-depth gate", () => {
     expect(composeSdd({})).not.toContain("FRAGMENT(sdd-review-single.md)");
   });
 
+  it("always carries the waiting override, between the model map and the verification contract", () => {
+    // The SDD skill tells an idle orchestrator to wait in five-to-ten-minute
+    // stretches. On a host that delivers child completion as a notification, a
+    // blocking wait swallows that notification until it expires, so every
+    // stretch runs to its full length. The override is unconditional: it does
+    // not depend on task count, tier, or minimalism mode.
+    for (const values of [{}, { tasks: "1" }, { tasks: "3" }]) {
+      const out = composeSdd(values);
+      expect(out).toContain("FRAGMENT(sdd-waiting.md)");
+      expect(out.indexOf("FRAGMENT(sdd-model-map.md)"))
+        .toBeLessThan(out.indexOf("FRAGMENT(sdd-waiting.md)"));
+      expect(out.indexOf("FRAGMENT(sdd-waiting.md)"))
+        .toBeLessThan(out.indexOf("FRAGMENT(sdd-verification.md)"));
+    }
+  });
+
   it("rejects a --tasks value that is not a positive integer", () => {
     // Not absence: a malformed value is a typo, and the module's rule is that
     // defaulting is never the fallback.

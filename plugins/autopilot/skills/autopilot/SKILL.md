@@ -516,9 +516,10 @@ map, so the composed definition overrides that with a literal mapping plus a
 rendered table of the six roles' actual `model` and `effort` values, read from
 merged config at compose time. It also carries a verification contract, which
 stops the stage agent narrating its own verification into the developer's
-transcript, and a findings capture contract, which stops SDD's review findings
-being discarded — and a minimalism contract when `minimalism.mode` is `lite` or
-`full`.
+transcript, a findings capture contract, which stops SDD's review findings
+being discarded, and a waiting override, which stops the orchestrator sleeping
+through its children's completion notifications — and a minimalism contract
+when `minimalism.mode` is `lite` or `full`.
 
 The verification contract reduces transcript noise; it does not eliminate it.
 SDD's own nested dispatches still render their tool calls.

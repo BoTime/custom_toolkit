@@ -97,6 +97,7 @@ export const STAGES = {
     fragments: ({ config, values }) => [
       "sdd-model-map.md",
       { text: roleTable(config) },
+      "sdd-waiting.md",
       "sdd-verification.md",
       "sdd-findings.md",
       ...(isSingleTask(values?.tasks) ? ["sdd-review-single.md"] : []),
