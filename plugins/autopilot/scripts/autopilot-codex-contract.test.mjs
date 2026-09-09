@@ -61,7 +61,7 @@ describe("Codex dispatch contract", () => {
 
   it("writes the pr record to a JSON stage path", () => {
     expect(codexOutputPath("run-7", "pr"))
-      .toBe(".superpowers/autopilot/run-7/agents/pr.json");
+      .toBe(".superpowers/autopilot/runs/run-7/agents/pr.json");
   });
 });
 

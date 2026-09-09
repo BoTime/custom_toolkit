@@ -4,8 +4,8 @@
 // fixture tree, and use one real tmpdir round-trip to prove the write appends
 // rather than truncates.
 
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -21,6 +21,15 @@ import {
   candidates,
   formatQuestionSection,
 } from "./autopilot-questions.mjs";
+import { RUNS_ROOT } from "./autopilot-paths.mjs";
+
+// Only the run listing is faked; the tmpdir round-trip below still uses the
+// real filesystem. `main` reads its corpus root straight from disk, and that
+// root is what the report-root test asserts.
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal()),
+  readdirSync: vi.fn(() => []),
+}));
 
 const question = (over = {}) => ({
   seq: 1,
@@ -438,5 +447,18 @@ describe("formatQuestionSection", () => {
     const out = formatQuestionSection([], { threshold: 2, summary, malformed: 0 });
     expect(out).toContain("## Missing-context candidates");
     expect(out).toContain("No candidates: no answerable question recurred 2 or more times.");
+  });
+});
+
+describe("report root", () => {
+  it("defaults to the runs directory", () => {
+    // The default is the only path a bare `report` reads; pointed at the old
+    // root it would find the `runs` directory itself and no questions at all.
+    vi.mocked(readdirSync).mockClear();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    main(["report"]);
+    log.mockRestore();
+    expect(vi.mocked(readdirSync).mock.calls[0][0]).toBe(".superpowers/autopilot/runs");
+    expect(RUNS_ROOT).toBe(".superpowers/autopilot/runs");
   });
 });

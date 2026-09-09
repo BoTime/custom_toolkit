@@ -2,9 +2,18 @@
 // many runs. A single bad line must never cost the rest of the file: parsing is
 // deliberately tolerant, counting what it could not read rather than throwing.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { readdirSync } from "node:fs";
 import { STAGES, parseFindings } from "./autopilot-findings.mjs";
-import { collectCorpus, formatReport, splitThresholdFlag } from "./autopilot-findings.mjs";
+import { collectCorpus, formatReport, main, splitThresholdFlag } from "./autopilot-findings.mjs";
+import { RUNS_ROOT } from "./autopilot-paths.mjs";
+
+// Only the run listing is faked: `main` reads its corpus root straight from
+// the filesystem, and that root is the assertion below.
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal()),
+  readdirSync: vi.fn(() => []),
+}));
 
 const finding = (over = {}) => ({
   task: 4,
@@ -312,5 +321,18 @@ describe("threshold flag parsing", () => {
     const { positional, flagValue } = splitThresholdFlag(["report", "somedir", "4"]);
     expect(flagValue).toBeUndefined();
     expect(positional).toEqual(["report", "somedir", "4"]);
+  });
+});
+
+describe("report root", () => {
+  it("defaults to the runs directory", () => {
+    // The default is the only path a bare `report` reads; pointed at the old
+    // root it would find the `runs` directory itself and no findings at all.
+    vi.mocked(readdirSync).mockClear();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    main(["report"]);
+    log.mockRestore();
+    expect(vi.mocked(readdirSync).mock.calls[0][0]).toBe(".superpowers/autopilot/runs");
+    expect(RUNS_ROOT).toBe(".superpowers/autopilot/runs");
   });
 });

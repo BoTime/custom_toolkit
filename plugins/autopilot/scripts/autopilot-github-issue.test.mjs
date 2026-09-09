@@ -176,11 +176,11 @@ describe("ledgerHeaderLine and writeLedgerHeader", () => {
 
   it("creates the run directory and appends the header to run.md", () => {
     const fs = fakeFs();
-    writeLedgerHeader(".superpowers/autopilot/issue-42-csv-export-drops-unicode", ISSUE, fs.ops);
-    expect(fs.mkdirs).toEqual([".superpowers/autopilot/issue-42-csv-export-drops-unicode"]);
+    writeLedgerHeader(".superpowers/autopilot/runs/issue-42-csv-export-drops-unicode", ISSUE, fs.ops);
+    expect(fs.mkdirs).toEqual([".superpowers/autopilot/runs/issue-42-csv-export-drops-unicode"]);
     expect(fs.appends).toEqual([
       [
-        ".superpowers/autopilot/issue-42-csv-export-drops-unicode/run.md",
+        ".superpowers/autopilot/runs/issue-42-csv-export-drops-unicode/run.md",
         "# autopilot run — task: GitHub issue #42: CSV export drops unicode\n",
       ],
     ]);
@@ -248,7 +248,7 @@ describe("preflightGithub", () => {
     expect(result.ok).toBe(false);
     expect(result.missing).toEqual(["project_number"]);
     expect(result.message).toContain("project_number");
-    expect(result.message).toContain(".claude/autopilot.json");
+    expect(result.message).toContain(".superpowers/autopilot/configs/autopilot.json");
   });
 });
 
@@ -287,16 +287,16 @@ describe("main — resolve and preflight", () => {
     const fs = fakeFs();
     const gh = fakeGh(() => ok(JSON.stringify(ISSUE)));
     main(
-      ["resolve", "--issue", "42", "--write-ledger", ".superpowers/autopilot"],
+      ["resolve", "--issue", "42", "--write-ledger", ".superpowers/autopilot/runs"],
       gh,
       () => ({ config: CONFIG }),
       fs.ops,
     );
     expect(process.exitCode).toBe(0);
-    expect(fs.mkdirs).toEqual([".superpowers/autopilot/issue-42-csv-export-drops-unicode"]);
+    expect(fs.mkdirs).toEqual([".superpowers/autopilot/runs/issue-42-csv-export-drops-unicode"]);
     expect(fs.appends).toEqual([
       [
-        ".superpowers/autopilot/issue-42-csv-export-drops-unicode/run.md",
+        ".superpowers/autopilot/runs/issue-42-csv-export-drops-unicode/run.md",
         "# autopilot run — task: GitHub issue #42: CSV export drops unicode\n",
       ],
     ]);

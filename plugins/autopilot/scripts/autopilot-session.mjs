@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "./autopilot-config.mjs";
+import { resolveConfigPath } from "./autopilot-host.mjs";
 import { append, read as readLedger, sessionEntries } from "./autopilot-ledger.mjs";
 
 /**
@@ -206,7 +207,7 @@ export function main(argv = process.argv.slice(2), env = process.env, deps = {})
   } = deps;
 
   const [command, ...rest] = argv;
-  const configPath = flag(argv, "config", ".claude/autopilot.json");
+  const configPath = flag(argv, "config") ?? resolveConfigPath("claude").path;
 
   let caps = DEFAULT_CAPS;
   try {

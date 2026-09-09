@@ -665,6 +665,12 @@ describe("main's run flags", () => {
     });
   });
 
+  it("defaults the config path when no --config is given", async () => {
+    const { calls, fn } = spy();
+    await silently(() => main(["run", "--run-dir=x", "--spec=s.md"], fn));
+    expect(calls[0].configPath).toBe(".superpowers/autopilot/configs/autopilot.json");
+  });
+
   // The first invocation carries no flag. Defaulting to 1 here is what keeps it
   // distinct from the fix round's re-run.
   it("defaults the round to 1 when no --round is given", async () => {

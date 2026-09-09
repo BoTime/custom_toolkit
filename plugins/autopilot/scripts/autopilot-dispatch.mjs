@@ -16,7 +16,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TIERS, loadConfig } from "./autopilot-config.mjs";
-import { assertHost, hostConfigPath } from "./autopilot-host.mjs";
+import { assertHost, resolveConfigPath } from "./autopilot-host.mjs";
+import { runDir } from "./autopilot-paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -266,13 +267,11 @@ export function readFragment(rel) {
   }
 }
 
-/** `.superpowers/autopilot/<run>/agents/<stage>.md` — keyed by stage. */
-export const outputPath = (run, stage) =>
-  `.superpowers/autopilot/${run}/agents/${stage}.md`;
+/** `.superpowers/autopilot/runs/<run>/agents/<stage>.md` — keyed by stage. */
+export const outputPath = (run, stage) => `${runDir(run)}/agents/${stage}.md`;
 
-/** `.superpowers/autopilot/<run>/agents/<stage>.json` — keyed by stage. */
-export const codexOutputPath = (run, stage) =>
-  `.superpowers/autopilot/${run}/agents/${stage}.json`;
+/** `.superpowers/autopilot/runs/<run>/agents/<stage>.json` — keyed by stage. */
+export const codexOutputPath = (run, stage) => `${runDir(run)}/agents/${stage}.json`;
 
 function composeInstructions({
   stage,
@@ -448,7 +447,7 @@ export function main(argv = process.argv.slice(2), io = {}) {
     const host = values.host ?? "claude";
     assertHost(host);
 
-    const configPath = values.config ?? hostConfigPath(host);
+    const configPath = values.config ?? resolveConfigPath(host).path;
     const { config, warnings } = loadConfig(
       configPath, env, readFile, undefined, { host },
     );

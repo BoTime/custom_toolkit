@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { loadConfig, validateGithubConfig } from "./autopilot-config.mjs";
+import { resolveConfigPath } from "./autopilot-host.mjs";
 
 /**
  * The six ledger lines the autopilot-github wrapper's hooks append, in
@@ -134,7 +135,7 @@ export function preflightGithub(config) {
         missing,
         message:
           `github config is incomplete — missing: ${missing.join(", ")}. ` +
-          `Add them under "github" in .claude/autopilot.json.`,
+          `Add them under "github" in .superpowers/autopilot/configs/autopilot.json.`,
       };
 }
 
@@ -216,7 +217,8 @@ export function resolveItemId(issueNumber, config, gh) {
   if (!id) {
     throw new Error(
       `issue #${issueNumber} is not an item on project ${github.project_owner}/${github.project_number} — ` +
-        `add the issue to that board, or fix project_owner/project_number in .claude/autopilot.json`,
+        `add the issue to that board, or fix project_owner/project_number in ` +
+        `.superpowers/autopilot/configs/autopilot.json`,
     );
   }
   return id;
@@ -391,7 +393,7 @@ export function main(
 ) {
   const [command] = argv;
   const args = parseArgs(argv.slice(1));
-  const configPath = args.config ?? ".claude/autopilot.json";
+  const configPath = args.config ?? resolveConfigPath("claude").path;
 
   try {
     if (command === "preflight") {
