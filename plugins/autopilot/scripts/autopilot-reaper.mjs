@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { resolve, dirname, basename } from "node:path";
+import {
+  WORKTREE_PROVIDERS, resolveMainPath, resolveRepoId, parseWorktreeList, failureReason,
+} from "./autopilot-worktree.mjs";
 import { pathToFileURL } from "node:url";
 
 export function parseWorktrees(porcelain) {
@@ -18,19 +20,28 @@ export function parseWorktrees(porcelain) {
   });
 }
 
+/**
+ * The reasons that decide a worktree's fate without probing git — one source
+ * of truth so `classify` and `planReap` cannot drift apart on which entries
+ * are probed.
+ *
+ * `opts.worktreeDir` may be `null`: orca mode has no containment filter,
+ * because Orca chooses the layout. `wt.isMain` covers the same ground as
+ * `mainPath` for rows that came from Orca rather than from git.
+ */
+export function structuralReason(wt, opts) {
+  if (wt.path === opts.mainPath || wt.isMain === true) return "main checkout";
+  if (opts.worktreeDir != null && !wt.path.includes(`/${opts.worktreeDir}/`)) {
+    return `outside ${opts.worktreeDir}`;
+  }
+  if (wt.locked) return "locked by another session";
+  if (wt.branch === null) return "detached HEAD";
+  return null;
+}
+
 export function classify(worktree, probeResult, opts) {
-  if (worktree.path === opts.mainPath) {
-    return { reapable: false, reason: "main checkout" };
-  }
-  if (!worktree.path.includes(`/${opts.worktreeDir}/`)) {
-    return { reapable: false, reason: `outside ${opts.worktreeDir}` };
-  }
-  if (worktree.locked) {
-    return { reapable: false, reason: "locked by another session" };
-  }
-  if (worktree.branch === null) {
-    return { reapable: false, reason: "detached HEAD" };
-  }
+  const structural = structuralReason(worktree, opts);
+  if (structural) return { reapable: false, reason: structural };
   const { unmergedPatches, dirtyLines } = probeResult;
   if (unmergedPatches > 0) {
     return { reapable: false, reason: `${unmergedPatches} unmerged commit(s)` };
@@ -45,12 +56,9 @@ export function planReap(worktrees, probe, opts) {
   const reap = [];
   const keep = [];
   for (const wt of worktrees) {
-    const skip =
-      wt.path === opts.mainPath ||
-      !wt.path.includes(`/${opts.worktreeDir}/`) ||
-      wt.locked ||
-      wt.branch === null;
-    const probeResult = skip ? { unmergedPatches: 0, dirtyLines: 0 } : probe(wt);
+    const probeResult = structuralReason(wt, opts)
+      ? { unmergedPatches: 0, dirtyLines: 0 }
+      : probe(wt);
     const { reapable, reason } = classify(wt, probeResult, opts);
     if (reapable) reap.push(wt.path);
     else keep.push({ path: wt.path, reason });
@@ -58,16 +66,12 @@ export function planReap(worktrees, probe, opts) {
   return { reap, keep };
 }
 
-function git(args, cwd) {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+function run(file, args, opts) {
+  return execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts });
 }
 
-export function resolveMainPath(run) {
-  let dir = resolve(run().trim());
-  while (basename(dir) !== ".git" && dirname(dir) !== dir) {
-    dir = dirname(dir);
-  }
-  return dirname(dir);
+function git(args, cwd) {
+  return run("git", args, { cwd });
 }
 
 export function probeWorktree(baseRef, mainPath) {
@@ -80,8 +84,61 @@ export function probeWorktree(baseRef, mainPath) {
   };
 }
 
-export function main(argv = process.argv.slice(2)) {
+/** Removing through Orca is what makes Orca's own record disappear with the checkout. */
+export function orcaRmArgv(path) {
+  return ["worktree", "rm", "--worktree", `path:${path}`, "--json"];
+}
+
+/**
+ * Reaping is opportunistic housekeeping. Every Orca problem prints one line
+ * and returns; failing the setup stage over a tidy-up would be a poor trade.
+ */
+export function reapOrca({ exec, mainPath, baseRef, apply, probe, log = console.log }) {
+  const unavailable = (reason) => log(`orca unavailable — ${reason}; nothing reaped`);
+
+  const repo = resolveRepoId(exec, mainPath);
+  if (!repo.ok) return unavailable(repo.reason);
+
+  let stdout;
+  try {
+    stdout = exec("orca", ["worktree", "list", "--repo", `id:${repo.id}`, "--json"], {
+      cwd: mainPath,
+    });
+  } catch (error) {
+    return unavailable(failureReason(error));
+  }
+  const listed = parseWorktreeList(stdout);
+  if (!listed.ok) return unavailable(listed.reason);
+
+  // worktreeDir is null on purpose: Orca owns the layout.
+  const plan = planReap(listed.worktrees, probe, { mainPath, worktreeDir: null });
+
+  for (const { path, reason } of plan.keep) log(`keep  ${path} — ${reason}`);
+  for (const path of plan.reap) {
+    if (!apply) {
+      log(`reapable ${path} (dry run; pass --apply to remove)`);
+      continue;
+    }
+    try {
+      exec("orca", orcaRmArgv(path), { cwd: mainPath });
+      log(`removed ${path}`);
+    } catch (error) {
+      log(`keep  ${path} — orca worktree rm failed (${failureReason(error)})`);
+    }
+  }
+}
+
+export function main(argv = process.argv.slice(2), io = {}) {
+  const { exec = run, log = console.log } = io;
   const apply = argv.includes("--apply");
+  const provider = argv.find((a) => a.startsWith("--provider="))?.slice(11) ?? "git";
+  if (!WORKTREE_PROVIDERS.includes(provider)) {
+    // Not a throw: the setup stage runs this unattended, and a bad flag must
+    // not take the run down with it. The config validator is the real gate.
+    log(`unknown --provider "${provider}" — expected ${WORKTREE_PROVIDERS.join(", ")}; nothing reaped`);
+    return;
+  }
+
   const mainPath = resolveMainPath(() =>
     git(["rev-parse", "--git-common-dir"], process.cwd()),
   );
@@ -90,21 +147,25 @@ export function main(argv = process.argv.slice(2)) {
     argv.find((a) => a.startsWith("--dir="))?.slice(6) ?? ".claude/worktrees";
 
   git(["fetch", "origin"], mainPath);
+  const probe = probeWorktree(baseRef, mainPath);
+
+  if (provider === "orca") {
+    reapOrca({ exec, mainPath, baseRef, apply, probe, log });
+    return;
+  }
+
   const worktrees = parseWorktrees(git(["worktree", "list", "--porcelain"], mainPath));
-  const plan = planReap(worktrees, probeWorktree(baseRef, mainPath), {
-    mainPath,
-    worktreeDir,
-  });
+  const plan = planReap(worktrees, probe, { mainPath, worktreeDir });
 
   for (const { path, reason } of plan.keep) {
-    console.log(`keep  ${path} — ${reason}`);
+    log(`keep  ${path} — ${reason}`);
   }
   for (const path of plan.reap) {
     if (apply) {
       git(["worktree", "remove", path], mainPath);
-      console.log(`removed ${path}`);
+      log(`removed ${path}`);
     } else {
-      console.log(`reapable ${path} (dry run; pass --apply to remove)`);
+      log(`reapable ${path} (dry run; pass --apply to remove)`);
     }
   }
   if (apply && plan.reap.length > 0) git(["worktree", "prune"], mainPath);

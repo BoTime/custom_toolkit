@@ -221,15 +221,20 @@ any command.
 ## Delta 2 — run naming
 
 `<run>` is the `run` field from Delta 1: `issue-<n>-<slug>`, e.g.
-`issue-42-csv-export-drops-unicode`. The git branch becomes
+`issue-42-csv-export-drops-unicode`. The git branch is the worktree provider's
+to name: under the `git` provider it becomes
 `worktree-issue-42-csv-export-drops-unicode`, the `worktree-` prefix coming from
-`superpowers:using-git-worktrees` as it already does; `<run>` itself never
-carries the prefix, per autopilot's "The run directory" rule.
+`superpowers:using-git-worktrees`; under `orca` it is whatever Orca picks. Either
+way `<run>` itself never carries a prefix, per autopilot's "The run directory"
+rule, and every stage that needs the branch reads it from the ledger's
+`worktree:` line rather than deriving it.
 
 The value is **computed once, at resolution** — before Phase 1 begins, which is
 what lets the start hook name it — and **declared at `setup`** as the
-worktree/branch name passed to `superpowers:using-git-worktrees`, in place of a
-name falling out of the brainstorm. Everything downstream threads it exactly as
+`--name=<run>` passed to `autopilot-worktree.mjs create`, in place of a name
+falling out of the brainstorm. That call also carries `--issue=<n>`, so Orca
+links the new worktree to the issue that started the run and the Orca app shows
+the run against it. Everything downstream threads it exactly as
 autopilot already does: the ledger directory, the generated host-native stage
 artifacts under `.superpowers/autopilot/runs/<run>/agents/`, the PR branch.
 

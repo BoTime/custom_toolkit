@@ -157,6 +157,11 @@ describe("the load-bearing rules", () => {
       expect(skill).toContain(`autopilot-github-issue.mjs ${subcommand}`);
     }
   });
+
+  it("says the branch is the provider's to name, not always worktree-<run>", () => {
+    expect(flat).toContain("The git branch is the worktree provider's to name");
+    expect(flat).toContain("reads it from the ledger's `worktree:` line");
+  });
 });
 
 // The wrapper restates autopilot's parking-condition count twice, as a way of

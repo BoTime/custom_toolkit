@@ -244,8 +244,8 @@ Do not ask your human partner anything in Phase 2 unless a stage parks.
 `<run>` is **one string for the whole run**: the run name chosen at Phase 1.
 The `<branch>` placeholder in run-directory paths refers to this same string —
 two names for one value. It is not the worktree directory name and not the
-`worktree-` prefixed git branch. Those may differ; `<run>` does not change to
-follow them. Pick it once and reuse it verbatim.
+git branch, which the worktree provider names. Those may differ; `<run>` does
+not change to follow them. Pick it once and reuse it verbatim.
 
 The run directory is `.superpowers/autopilot/runs/<run>/` in the **main checkout** —
 never inside the worktree. `run.md` and `verify/` live there, and
@@ -349,19 +349,22 @@ Unless `reaper` is `false` in config, also run from the repository root:
 
 ```bash
 node "$AP/scripts/autopilot-reaper.mjs" --apply \
-  --dir=<config.worktree_dir> --base=<config.base_ref>
+  --dir=<config.worktree_dir> --base=<config.base_ref> \
+  --provider=<config.worktree_provider>
 ```
 
-Pass both flags explicitly from config. Report what it kept and why.
+Pass all three flags explicitly from config. Report what it kept and why.
 
-Create the worktree from `base_ref` using `superpowers:using-git-worktrees`.
-Phase 2 is unattended, so answer its consent question up front in the same
-instruction rather than letting it ask: state explicitly that a worktree is
-wanted, and pass `worktree_dir` from config as the declared directory — this
-repository uses `.claude/worktrees/` (what `autopilot-reaper.mjs` scans), not
-that skill's own `.worktrees/` default.
+Then create the worktree:
 
-Append: `worktree: <path> (branch <name>)`.
+```bash
+node "$AP/scripts/autopilot-worktree.mjs" create \
+  --config=<config> --host=<host> --name=<run> --base=<config.base_ref>
+```
+
+Under `/autopilot-github`, add `--issue=<n>`. The script prints one line;
+`references/stages/worktree-provider.md` says what each line means, what to
+append for it, and where the git path still applies.
 
 ### `spec`
 

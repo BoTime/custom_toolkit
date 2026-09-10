@@ -13,6 +13,7 @@
     "fix_escalation":    { "model": "opus",   "effort": "high" }
   },
   "worktree_dir": ".claude/worktrees",
+  "worktree_provider": "orca",
   "base_ref": "origin/main",
   "reaper": true,
   "findings_threshold": 2,

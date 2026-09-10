@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES, TIERS,
+  ROLES, EFFORTS, GITHUB_KEYS, MINIMALISM_MODES, TIERS, WORKTREE_PROVIDERS,
   validateConfig, validateGithubConfig, mergeConfig, loadConfig,
   scaffoldConfig, ensureIgnoreRules, IGNORE_RULES,
 } from "./autopilot-config.mjs";
@@ -30,6 +30,7 @@ const validConfig = () => ({
     fix_escalation: { model: "opus", effort: "xhigh" },
   },
   worktree_dir: ".claude/worktrees",
+  worktree_provider: "orca",
   base_ref: "origin/main",
   test_command: "npm test",
   reaper: true,
@@ -1078,6 +1079,12 @@ describe("scaffoldConfig", () => {
     expect(writes).toEqual([]);
     expect(mkdirs).toEqual([]);
   });
+
+  it("carries worktree_provider into the scaffolded config", () => {
+    const { writes, deps } = harness();
+    scaffoldConfig(CLAUDE_PROJECT, { host: "claude", ...deps });
+    expect(JSON.parse(writes[0].text).worktree_provider).toBe("orca");
+  });
 });
 
 describe("ensureIgnoreRules", () => {
@@ -1134,5 +1141,64 @@ describe("ensureIgnoreRules", () => {
     const d = deps({ ".gitignore": "node_modules/" });
     ensureIgnoreRules(".gitignore", d);
     expect(d.files[".gitignore"].split("\n")[0]).toBe("node_modules/");
+  });
+});
+
+// `worktree_provider` decides who creates the run's worktree. It is in
+// TOP_LEVEL — unlike `minimalism` and `tiers` — because the shipped defaults
+// always supply it, so a project config that predates the key still loads: the
+// merge fills it in. A typo must not degrade quietly into one of the two
+// providers; that is indistinguishable from never having configured it.
+describe("worktree_provider", () => {
+  const DEFAULTS = "/plugin/autopilot.default.json";
+  const PROJECT = "/proj/.superpowers/autopilot/configs/autopilot.json";
+  const reader = (files) => (p) => {
+    if (!(p in files)) throw new Error("ENOENT");
+    return files[p];
+  };
+
+  it("lists exactly the two providers", () => {
+    expect(WORKTREE_PROVIDERS).toEqual(["orca", "git"]);
+  });
+
+  it("ships orca in both default config files", () => {
+    for (const host of ["claude", "codex"]) {
+      const shipped = JSON.parse(readFileSync(hostDefaultsPath(host), "utf8"));
+      expect(shipped.worktree_provider).toBe("orca");
+    }
+  });
+
+  it("returns orca when the project config says nothing", () => {
+    const readFile = reader({ [DEFAULTS]: JSON.stringify(validConfig()) });
+    const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.worktree_provider).toBe("orca");
+  });
+
+  it("accepts git from the project config", () => {
+    const readFile = reader({
+      [DEFAULTS]: JSON.stringify(validConfig()),
+      [PROJECT]: JSON.stringify({ worktree_provider: "git" }),
+    });
+    const { config } = loadConfig(PROJECT, {}, readFile, DEFAULTS);
+    expect(config.worktree_provider).toBe("git");
+  });
+
+  it("rejects any other value, naming the offending value and the two legal ones", () => {
+    const result = validateConfig(
+      { ...validConfig(), worktree_provider: "orka" },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      'worktree_provider: "orka" is not one of orca, git',
+    );
+  });
+
+  it("rejects a missing value", () => {
+    const cfg = validConfig();
+    delete cfg.worktree_provider;
+    const result = validateConfig(cfg, {});
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("worktree_provider: missing");
   });
 });

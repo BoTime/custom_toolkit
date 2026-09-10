@@ -34,6 +34,19 @@ export const MINIMALISM_MODES = ["off", "lite", "full"];
 export const TIERS = ["small", "standard", "large"];
 
 /**
+ * Who creates the run's worktree. `orca` hands the job to the Orca CLI, which
+ * names the branch itself and links the checkout to its issue; `git` uses
+ * `superpowers:using-git-worktrees` as autopilot always has.
+ *
+ * Unlike `minimalism` and `tiers` this key IS in `TOP_LEVEL`: the shipped
+ * defaults always supply it, so the merged view always has one, and a project
+ * config that predates the key still loads. What that buys is the rejection
+ * below — a typo that silently degraded into a provider would be
+ * indistinguishable from never having configured the feature.
+ */
+export const WORKTREE_PROVIDERS = ["orca", "git"];
+
+/**
  * The `github` keys the autopilot-github wrapper needs, in report order.
  *
  * Deliberately NOT part of `TOP_LEVEL` below: that list is a hard error on
@@ -57,7 +70,9 @@ export function validateGithubConfig(config) {
   });
 }
 
-const TOP_LEVEL = ["worktree_dir", "base_ref", "reaper", "findings_threshold"];
+const TOP_LEVEL = [
+  "worktree_dir", "worktree_provider", "base_ref", "reaper", "findings_threshold",
+];
 
 /**
  * Merge a project config over the plugin defaults.
@@ -171,6 +186,14 @@ export function validateConfig(
     (!Number.isInteger(threshold) || threshold < 1)
   ) {
     errors.push("findings_threshold: must be a positive integer");
+  }
+
+  // Absent is already an error via TOP_LEVEL; this catches a present typo.
+  const provider = obj.worktree_provider;
+  if (provider !== undefined && !WORKTREE_PROVIDERS.includes(provider)) {
+    errors.push(
+      `worktree_provider: "${provider}" is not one of ${WORKTREE_PROVIDERS.join(", ")}`,
+    );
   }
 
   // test_command is the one genuinely project-specific key, so it has no
