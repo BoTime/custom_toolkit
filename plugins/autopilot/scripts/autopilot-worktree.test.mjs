@@ -19,6 +19,8 @@ import {
   resolveRepoId,
   formatOutcome,
   createWithOrca,
+  restoreWorktree,
+  formatRestore,
   main,
 } from "./autopilot-worktree.mjs";
 
@@ -481,5 +483,204 @@ describe("main", () => {
   it("exits non-zero on an unknown subcommand", () => {
     const { io: deps } = io("orca", () => { throw new Error("must not run"); });
     expect(main(["destroy"], deps)).not.toBe(0);
+  });
+});
+
+describe("restoreWorktree", () => {
+  // A run's worktree can disappear mid-run: Orca's UI removes the card, a
+  // concurrent run's reaper reaps it while it is still merged and clean, or a
+  // human deletes the directory. The branch survives all three, so the
+  // checkout is recoverable — but only git can put an existing branch back at
+  // an existing path, which is why the orca provider reports a downgrade
+  // rather than pretending Orca still owns the result.
+  const REF = `refs/heads/${"BoTime/issue-48-thing"}`;
+  const BR = "BoTime/issue-48-thing";
+
+  /** git that answers the three probes: branch exists, path's HEAD, add/prune. */
+  const gitStub = ({ headAt = BR, branchRef = true, onAdd } = {}) => {
+    const seen = [];
+    const exec = (file, args) => {
+      seen.push([file, ...args]);
+      if (file !== "git") throw new Error(`unexpected ${file}`);
+      if (args[0] === "rev-parse" && args[1] === "--git-common-dir") return "/repo/.git\n";
+      if (args[0] === "show-ref") {
+        if (!branchRef) throw new Error("not a ref");
+        return "";
+      }
+      if (args[0] === "-C" && args[2] === "rev-parse") {
+        if (headAt === null) throw new Error("not a git repository");
+        return `${headAt}\n`;
+      }
+      if (args[0] === "worktree" && args[1] === "prune") return "";
+      if (args[0] === "worktree" && args[1] === "add") {
+        if (onAdd) return onAdd();
+        return "Preparing worktree\n";
+      }
+      throw new Error(`unexpected git ${args.join(" ")}`);
+    };
+    return { exec, seen };
+  };
+
+  const restore = (stub, over = {}) => restoreWorktree({
+    exec: stub.exec, cwd: "/repo", path: WT_PATH, branch: BR, provider: "orca", ...over,
+  });
+
+  it("reports the checkout intact and touches nothing when it is still there", () => {
+    const stub = gitStub();
+    expect(restore(stub)).toEqual({ kind: "intact", path: WT_PATH, branch: BR });
+    expect(stub.seen.some((c) => c[1] === "worktree" && c[2] === "add")).toBe(false);
+  });
+
+  it("restores the recorded path onto the recorded branch when the checkout is gone", () => {
+    const stub = gitStub({ headAt: null });
+    const outcome = restore(stub);
+    expect(outcome.kind).toBe("restored");
+    expect(outcome.path).toBe(WT_PATH);
+    expect(outcome.branch).toBe(BR);
+    expect(stub.seen).toContainEqual(["git", "worktree", "add", WT_PATH, BR]);
+  });
+
+  it("prunes the stale admin record before adding, or `add` would refuse the path", () => {
+    const stub = gitStub({ headAt: null });
+    restore(stub);
+    const order = stub.seen.filter((c) => c[1] === "worktree").map((c) => c[2]);
+    expect(order).toEqual(["prune", "add"]);
+  });
+
+  it("says the run is no longer orca-managed under the orca provider", () => {
+    // Probed against the real CLI: `orca worktree set --worktree path:<orphan>`
+    // answers ok:true while `worktree current` still denies the path, so there
+    // is no honest way to hand the restored checkout back to Orca.
+    const outcome = restore(gitStub({ headAt: null }));
+    expect(outcome.note).toMatch(/no longer orca-managed/);
+  });
+
+  it("adds no note under the git provider, where restoring in place loses nothing", () => {
+    const outcome = restore(gitStub({ headAt: null }), { provider: "git" });
+    expect(outcome.kind).toBe("restored");
+    expect(outcome.note).toBeUndefined();
+  });
+
+  it("parks when the branch is gone — the run's commits went with it", () => {
+    const outcome = restore(gitStub({ headAt: null, branchRef: false }));
+    expect(outcome.kind).toBe("park");
+    expect(outcome.reason).toMatch(/branch BoTime\/issue-48-thing no longer exists/);
+  });
+
+  it("parks rather than guessing when the path holds a different branch", () => {
+    const outcome = restore(gitStub({ headAt: "BoTime/something-else" }));
+    expect(outcome.kind).toBe("park");
+    expect(outcome.reason).toMatch(/BoTime\/something-else/);
+  });
+
+  it("names a detached HEAD as such rather than reporting a branch called HEAD", () => {
+    const outcome = restore(gitStub({ headAt: "HEAD" }));
+    expect(outcome.kind).toBe("park");
+    expect(outcome.reason).toMatch(/detached HEAD/);
+  });
+
+  it("parks when `git worktree add` fails, carrying git's own reason", () => {
+    const stub = gitStub({
+      headAt: null,
+      onAdd: boom({ stderr: "fatal: 'BoTime/issue-48-thing' is already checked out\n" }),
+    });
+    const outcome = restore(stub);
+    expect(outcome.kind).toBe("park");
+    expect(outcome.reason).toMatch(/already checked out/);
+  });
+
+  it("parks when the main checkout cannot be located", () => {
+    const exec = (file, args) => {
+      if (args[1] === "--git-common-dir") return boom({ stderr: "not a git repo\n" })();
+      throw new Error("must not probe further");
+    };
+    expect(restoreWorktree({ exec, cwd: "/nowhere", path: WT_PATH, branch: BR, provider: "orca" }))
+      .toEqual({ kind: "park", reason: "cannot locate the main checkout (not a git repo)" });
+  });
+
+  it("verifies the branch by full ref so a tag of the same name cannot satisfy it", () => {
+    const stub = gitStub();
+    restore(stub);
+    expect(stub.seen).toContainEqual(["git", "show-ref", "--verify", "--quiet", REF]);
+  });
+});
+
+describe("formatRestore", () => {
+  it("formats an intact checkout", () => {
+    expect(formatRestore({ kind: "intact", path: "/w", branch: "b" }))
+      .toBe("worktree intact: /w (branch b)");
+  });
+
+  it("formats a restore with its note", () => {
+    expect(formatRestore({ kind: "restored", path: "/w", branch: "b", note: "no longer x" }))
+      .toBe("worktree restored: /w (branch b) — no longer x");
+  });
+
+  it("formats a restore without a note", () => {
+    expect(formatRestore({ kind: "restored", path: "/w", branch: "b" }))
+      .toBe("worktree restored: /w (branch b)");
+  });
+
+  it("formats a park", () => {
+    expect(formatRestore({ kind: "park", reason: "branch b no longer exists" }))
+      .toBe("park: branch b no longer exists");
+  });
+});
+
+describe("main — restore", () => {
+  const CONFIG = "/proj/.superpowers/autopilot/configs/autopilot.json";
+
+  const io = (provider, exec) => {
+    const out = [];
+    const errs = [];
+    return {
+      out,
+      errs,
+      io: {
+        exec,
+        env: {},
+        cwd: "/repo",
+        readFile: (p) =>
+          (p === CONFIG ? JSON.stringify({ worktree_provider: provider }) : readFileSyncReal(p)),
+        log: (line) => out.push(line),
+        err: (line) => errs.push(line),
+      },
+    };
+  };
+
+  const args = (...extra) => [
+    "restore", `--config=${CONFIG}`, "--host=claude", ...extra,
+  ];
+
+  it("prints the intact line and exits 0", () => {
+    const exec = (file, a) => {
+      if (a[1] === "--git-common-dir") return "/repo/.git\n";
+      if (a[0] === "show-ref") return "";
+      if (a[0] === "-C") return "BoTime/x\n";
+      throw new Error(`unexpected git ${a.join(" ")}`);
+    };
+    const { out, io: deps } = io("orca", exec);
+    expect(main(args("--path=/w", "--branch=BoTime/x"), deps)).toBe(0);
+    expect(out).toEqual(["worktree intact: /w (branch BoTime/x)"]);
+  });
+
+  it("prints the park line and still exits 0 — a park is a run decision, not a usage error", () => {
+    const exec = (file, a) => {
+      if (a[1] === "--git-common-dir") return "/repo/.git\n";
+      if (a[0] === "show-ref") throw new Error("no ref");
+      throw new Error(`unexpected git ${a.join(" ")}`);
+    };
+    const { out, io: deps } = io("orca", exec);
+    expect(main(args("--path=/w", "--branch=BoTime/x"), deps)).toBe(0);
+    expect(out[0]).toMatch(/^park: branch BoTime\/x no longer exists/);
+  });
+
+  it("exits non-zero without --path or --branch", () => {
+    const { errs, io: deps } = io("orca", () => { throw new Error("must not run"); });
+    expect(main(args("--branch=BoTime/x"), deps)).not.toBe(0);
+    expect(errs.join(" ")).toMatch(/--path/);
+    const second = io("orca", () => { throw new Error("must not run"); });
+    expect(main(args("--path=/w"), second.io)).not.toBe(0);
+    expect(second.errs.join(" ")).toMatch(/--branch/);
   });
 });
