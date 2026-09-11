@@ -176,7 +176,7 @@ run rather than reporting green.
 | `test_command` | *(none)* | Verifies the branch after rebase. Unset → `land` parks. |
 | `base_ref` | `origin/main` | Branch point and rebase target |
 | `worktree_dir` | `.claude/worktrees` | Where run worktrees are created |
-| `worktree_provider` | `orca` | `orca` / `git` — who creates the run's worktree. `orca` uses the Orca CLI, which names the branch and links the checkout to its GitHub issue; `git` uses `superpowers:using-git-worktrees`. An Orca that is missing or failing falls back to `git` automatically. |
+| `worktree_provider` | `orca` | `orca` / `git` — who creates the run's worktree. `orca` uses the Orca CLI, which names the branch and links the checkout to its GitHub issue; `git` uses `superpowers:using-git-worktrees`. A run started inside an Orca worktree (the Orca handoff, `orca worktree create --agent claude --prompt "/autopilot-github <n>"`) reuses that worktree. An Orca that is missing or failing falls back to `git` automatically. |
 | `reaper` | `true` | Prune merged worktrees at `setup` |
 | `roles` | see defaults | Per-role `model` and `effort` for the nine dispatch roles |
 | `browser.ready_timeout_ms` | `120000` | How long `verify` waits for the app to answer before calling the stack dead |

@@ -320,6 +320,113 @@ describe("createWithOrca", () => {
   });
 });
 
+describe("createWithOrca — reusing the enclosing Orca worktree", () => {
+  // Orca's own handoff path (`worktree create --agent claude --prompt
+  // "/autopilot-github 48"`) starts the run *inside* a worktree Orca already
+  // made for the issue. Creating another one would leave that checkout empty
+  // and put the work somewhere the dashboard is not watching.
+  const gitOk = (args) => {
+    if (args[0] === "rev-parse") return "/repo/.git\n";
+    if (args[0] === "remote") return "origin\n";
+    throw new Error(`unexpected git ${args.join(" ")}`);
+  };
+
+  it("reuses the current worktree when cwd is inside a non-main Orca worktree", () => {
+    const seen = [];
+    const exec = (file, args, opts) => {
+      seen.push([file, ...args]);
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current" && opts.cwd === WT_PATH) return worktreeEnvelope();
+      if (args[1] === "set") return worktreeEnvelope();
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    const outcome = createWithOrca({
+      exec, cwd: WT_PATH, name: "issue-48-thing", base: "origin/main", issue: "48",
+    });
+    expect(outcome).toEqual({
+      kind: "orca", path: WT_PATH, branch: "BoTime/issue-48-thing", reused: true,
+    });
+    expect(seen.some((c) => c[0] === "orca" && c[2] === "create")).toBe(false);
+    expect(seen).toContainEqual([
+      "orca", "worktree", "set", "--worktree", `path:${WT_PATH}`, "--issue", "48", "--json",
+    ]);
+  });
+
+  it("reuses when cwd is a subdirectory of the current worktree", () => {
+    const exec = (file, args) => {
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current") return worktreeEnvelope();
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    const outcome = createWithOrca({
+      exec, cwd: `${WT_PATH}/plugins/autopilot`, name: "n", base: "origin/main",
+    });
+    expect(outcome.kind).toBe("orca");
+    expect(outcome.reused).toBe(true);
+  });
+
+  it("does not link the issue when none was given, and ignores a failing link", () => {
+    const seen = [];
+    const exec = (file, args) => {
+      seen.push([file, ...args]);
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current") return worktreeEnvelope();
+      if (args[1] === "set") return boom({ stderr: "no\n" })();
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    expect(createWithOrca({ exec, cwd: WT_PATH, name: "n", base: "origin/main" }).reused)
+      .toBe(true);
+    expect(seen.some((c) => c[2] === "set")).toBe(false);
+    expect(createWithOrca({ exec, cwd: WT_PATH, name: "n", base: "origin/main", issue: 48 })
+      .reused).toBe(true);
+  });
+
+  it("creates a new worktree when the current one is the main worktree", () => {
+    const exec = (file, args) => {
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current") return worktreeEnvelope({ path: "/repo", isMainWorktree: true });
+      if (args[1] === "create") return worktreeEnvelope();
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    const outcome = createWithOrca({ exec, cwd: "/repo", name: "n", base: "origin/main" });
+    expect(outcome).toEqual({ kind: "orca", path: WT_PATH, branch: "BoTime/issue-48-thing" });
+  });
+
+  it("creates a new worktree when `worktree current` names a directory cwd is not in", () => {
+    const exec = (file, args) => {
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current") return worktreeEnvelope({ path: "/elsewhere" });
+      if (args[1] === "create") return worktreeEnvelope();
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    expect(createWithOrca({ exec, cwd: "/repo", name: "n", base: "origin/main" }).reused)
+      .toBeUndefined();
+  });
+
+  it("creates a new worktree when `worktree current` is not ok", () => {
+    const exec = (file, args) => {
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current") return okEnvelope({});
+      if (args[1] === "create") return worktreeEnvelope();
+      if (args[1] === "show") return okEnvelope({ repo: { id: REPO_ID } });
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    const outcome = createWithOrca({ exec, cwd: "/repo", name: "n", base: "origin/main" });
+    expect(outcome.kind).toBe("orca");
+    expect(outcome.reused).toBeUndefined();
+  });
+
+  it("still falls back when `worktree current` throws — orca is unusable, not merely absent here", () => {
+    const exec = (file, args) => {
+      if (file === "git") return gitOk(args);
+      if (args[1] === "current") return boom({ stderr: "runtime not reachable\n" })();
+      throw new Error(`unexpected orca ${args.join(" ")}`);
+    };
+    expect(createWithOrca({ exec, cwd: "/repo", name: "n", base: "origin/main" }))
+      .toEqual({ kind: "fallback", reason: "runtime not reachable" });
+  });
+});
+
 describe("main", () => {
   const DEFAULTS = "/plugin/autopilot.default.json";
   const CONFIG = "/proj/.superpowers/autopilot/configs/autopilot.json";

@@ -234,7 +234,10 @@ what lets the start hook name it — and **declared at `setup`** as the
 `--name=<run>` passed to `autopilot-worktree.mjs create`, in place of a name
 falling out of the brainstorm. That call also carries `--issue=<n>`, so Orca
 links the new worktree to the issue that started the run and the Orca app shows
-the run against it. Everything downstream threads it exactly as
+the run against it. When the run was itself started inside an Orca worktree —
+the Orca handoff `orca worktree create --agent claude --prompt "/autopilot-github <n>"`
+from the main card — the script reuses that worktree instead of creating a
+second one, and links the issue to it. Everything downstream threads it exactly as
 autopilot already does: the ledger directory, the generated host-native stage
 artifacts under `.superpowers/autopilot/runs/<run>/agents/`, the PR branch.
 

@@ -173,6 +173,28 @@ export function resolveRepoId(exec, mainPath) {
   return { ok: false, reason: lastReason };
 }
 
+/**
+ * The Orca worktree `cwd` sits inside, or null. This is what lets Orca's own
+ * handoff path — `worktree create --agent claude --prompt "/autopilot ..."` —
+ * start a run inside a worktree Orca already made for it: creating a second
+ * checkout would leave that one empty and the work somewhere Orca's dashboard
+ * is not watching. The path check is deliberate: `worktree current` resolves
+ * by directory, but only a worktree that actually contains `cwd` is reused.
+ */
+export function enclosingWorktree(exec, cwd) {
+  let stdout;
+  try {
+    stdout = exec("orca", ["worktree", "current", "--json"], { cwd });
+  } catch {
+    return null;
+  }
+  const parsed = parseWorktreeResult(stdout);
+  if (!parsed.ok || parsed.worktree.isMain) return null;
+  const { path } = parsed.worktree;
+  const inside = cwd === path || cwd.startsWith(path.endsWith("/") ? path : `${path}/`);
+  return inside ? parsed.worktree : null;
+}
+
 export function formatOutcome(outcome) {
   if (outcome.kind === "git") return "provider: git";
   if (outcome.kind === "fallback") return `fallback: git — ${outcome.reason}`;
@@ -184,6 +206,23 @@ export function formatOutcome(outcome) {
  * unattended; a provider that can halt a run is worse than no provider at all.
  */
 export function createWithOrca({ exec, cwd, name, base, issue }) {
+  const enclosing = enclosingWorktree(exec, cwd);
+  if (enclosing) {
+    if (issue !== undefined && issue !== null && issue !== "") {
+      // Best effort: the run is already in the right place, and a card
+      // without its issue link is a reporting defect, not a provider failure.
+      try {
+        exec("orca", [
+          "worktree", "set", "--worktree", `path:${enclosing.path}`,
+          "--issue", String(issue), "--json",
+        ], { cwd });
+      } catch {
+        // deliberately ignored
+      }
+    }
+    return { kind: "orca", path: enclosing.path, branch: enclosing.branch, reused: true };
+  }
+
   let mainPath;
   try {
     mainPath = resolveMainPath(() => exec("git", ["rev-parse", "--git-common-dir"], { cwd }));
