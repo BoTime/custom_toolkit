@@ -364,7 +364,8 @@ node "$AP/scripts/autopilot-worktree.mjs" create \
 
 Under `/autopilot-github`, add `--issue=<n>`. The script prints one line;
 `references/stages/worktree-provider.md` says what each line means, what to
-append for it, and where the git path still applies.
+append for it, where the git path still applies, and what to run when the
+worktree it names later goes missing — never hand-build a replacement.
 
 ### `spec`
 

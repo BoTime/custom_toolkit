@@ -39,9 +39,13 @@ export function stripRefsHeads(branch) {
   return branch.startsWith(REFS_HEADS) ? branch.slice(REFS_HEADS.length) : branch;
 }
 
-/** One line of human-readable cause from a thrown execFileSync error. */
-export function failureReason(error) {
-  if (error?.code === "ENOENT") return "orca CLI not found on PATH";
+/**
+ * One line of human-readable cause from a thrown execFileSync error. `binary`
+ * names the command that failed: the restore path shells out to git, and
+ * "orca CLI not found" would be a lie there.
+ */
+export function failureReason(error, binary = "orca") {
+  if (error?.code === "ENOENT") return `${binary} CLI not found on PATH`;
   const stderr = typeof error?.stderr === "string" ? error.stderr : "";
   const first = stderr.split("\n").map((l) => l.trim()).find(Boolean);
   return first || error?.message || "the command exited non-zero";
@@ -258,6 +262,94 @@ export function createWithOrca({ exec, cwd, name, base, issue }) {
   return { kind: "orca", path: parsed.worktree.path, branch: parsed.worktree.branch };
 }
 
+/**
+ * Orca cannot take back a checkout it did not create. Probed against the real
+ * CLI: `orca worktree set --worktree path:<orphan>` answers `ok: true` and
+ * echoes a record, while `orca worktree current` in that same directory still
+ * reports `selector_not_found`. So a restored checkout is git's, and the run
+ * says so rather than carrying on as though the dashboard were still watching.
+ */
+const ORCA_NOTE = "no longer orca-managed: orca cannot re-adopt a checkout it did not create";
+
+/**
+ * A run's worktree can vanish mid-run — Orca's UI removes the card, a
+ * concurrent run's reaper reaps it while it is still merged and clean, or
+ * someone deletes the directory. The branch survives all three, so the
+ * checkout is recoverable, and `git worktree add <path> <branch>` is the only
+ * mechanism that puts an *existing* branch back at an *existing* path: Orca's
+ * `worktree create` would branch afresh from a base and rename the run.
+ *
+ * The recorded path is restored in place, never relocated. The ledger's
+ * `worktree:` line is the sole source of the path for every later stage, and
+ * that line is already written.
+ *
+ * Two states are not recoverable and park instead of being guessed at: a
+ * branch that no longer exists took the run's commits with it, and a path
+ * holding some other branch means the ledger no longer describes reality.
+ */
+export function restoreWorktree({ exec, cwd, path, branch, provider }) {
+  let mainPath;
+  try {
+    mainPath = resolveMainPath(() => exec("git", ["rev-parse", "--git-common-dir"], { cwd }));
+  } catch (error) {
+    return {
+      kind: "park",
+      reason: `cannot locate the main checkout (${failureReason(error, "git")})`,
+    };
+  }
+
+  // The full ref, verified: a tag or a remote-tracking ref of the same name
+  // must not stand in for the branch the run's commits are on.
+  try {
+    exec("git", ["show-ref", "--verify", "--quiet", `${REFS_HEADS}${branch}`], { cwd: mainPath });
+  } catch {
+    return { kind: "park", reason: `branch ${branch} no longer exists — nothing to restore` };
+  }
+
+  // `-C` rather than `cwd`: spawning into a directory that is gone throws
+  // ENOENT before git runs, which reads as a git failure rather than an
+  // absent checkout.
+  let headAt;
+  try {
+    headAt = exec("git", ["-C", path, "rev-parse", "--abbrev-ref", "HEAD"]).trim() || null;
+  } catch {
+    headAt = null;
+  }
+
+  if (headAt === branch) return { kind: "intact", path, branch };
+  if (headAt === "HEAD") {
+    return { kind: "park", reason: `the checkout at ${path} is on a detached HEAD, not ${branch}` };
+  }
+  if (headAt !== null) {
+    return { kind: "park", reason: `the checkout at ${path} is on ${headAt}, not ${branch}` };
+  }
+
+  // A removed directory can leave git's admin record behind, and `worktree
+  // add` refuses a path it still believes is registered.
+  try {
+    exec("git", ["worktree", "prune"], { cwd: mainPath });
+  } catch {
+    // Best effort: when `add` succeeds anyway, the prune was unnecessary.
+  }
+
+  try {
+    exec("git", ["worktree", "add", path, branch], { cwd: mainPath });
+  } catch (error) {
+    return { kind: "park", reason: `cannot restore ${path} (${failureReason(error, "git")})` };
+  }
+
+  const outcome = { kind: "restored", path, branch };
+  if (provider === "orca") outcome.note = ORCA_NOTE;
+  return outcome;
+}
+
+export function formatRestore(outcome) {
+  if (outcome.kind === "park") return `park: ${outcome.reason}`;
+  const verb = outcome.kind === "intact" ? "intact" : "restored";
+  const note = outcome.note ? ` — ${outcome.note}` : "";
+  return `worktree ${verb}: ${outcome.path} (branch ${outcome.branch})${note}`;
+}
+
 export function parseFlags(argv) {
   const values = {};
   for (const arg of argv) {
@@ -268,9 +360,12 @@ export function parseFlags(argv) {
   return values;
 }
 
-const USAGE =
+const USAGE = [
   "usage: autopilot-worktree.mjs create --config=<path> --host=<host> " +
-  "--name=<run> --base=<ref> [--issue=<n>]";
+    "--name=<run> --base=<ref> [--issue=<n>]",
+  "       autopilot-worktree.mjs restore --config=<path> --host=<host> " +
+    "--path=<worktree> --branch=<branch>",
+].join("\n");
 
 export function main(argv = process.argv.slice(2), io = {}) {
   const {
@@ -288,7 +383,7 @@ export function main(argv = process.argv.slice(2), io = {}) {
   } = io;
 
   const [subcommand, ...rest] = argv;
-  if (subcommand !== "create") {
+  if (subcommand !== "create" && subcommand !== "restore") {
     err(USAGE);
     return 2;
   }
@@ -299,13 +394,26 @@ export function main(argv = process.argv.slice(2), io = {}) {
     values = parseFlags(rest);
     const host = values.host ?? "claude";
     assertHost(host);
-    if (!values.name) throw new Error(`--name=<run> is required — ${USAGE}`);
-    if (!values.base) throw new Error(`--base=<ref> is required — ${USAGE}`);
+    if (subcommand === "create") {
+      if (!values.name) throw new Error(`--name=<run> is required — ${USAGE}`);
+      if (!values.base) throw new Error(`--base=<ref> is required — ${USAGE}`);
+    } else {
+      if (!values.path) throw new Error(`--path=<worktree> is required — ${USAGE}`);
+      if (!values.branch) throw new Error(`--branch=<branch> is required — ${USAGE}`);
+    }
     const configPath = values.config ?? resolveConfigPath(host).path;
     ({ config } = loadConfig(configPath, env, readFile, undefined, { host }));
   } catch (error) {
     err(error.message);
     return 2;
+  }
+
+  if (subcommand === "restore") {
+    log(formatRestore(restoreWorktree({
+      exec, cwd, path: values.path, branch: values.branch,
+      provider: config.worktree_provider,
+    })));
+    return 0;
   }
 
   // loadConfig has already rejected anything that is not one of the two.
